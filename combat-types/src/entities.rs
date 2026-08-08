@@ -1,4 +1,8 @@
-//! Ship and defence statistics for OGame v7.
+//! Ship and defence statistics for OGame.
+//!
+//! These are base values. Weapons, shielding and armour technology scale them
+//! by +10% per level; player class, alliance class and lifeform research add
+//! further per-ship modifiers the engine does not yet apply — see the issues.
 //!
 //! The numbers here are the game's own published unit stats — build costs,
 //! structural integrity, shield and weapon power, cargo capacity, base speed and
@@ -13,7 +17,7 @@
 use crate::{EntityStats, EntityType};
 use std::collections::HashMap;
 
-/// Load entity stats database (OGame v7 stats with economic data)
+/// Load entity stats database (base stats with economic data)
 pub fn load_entity_stats() -> HashMap<EntityType, EntityStats> {
     let mut stats = HashMap::new();
 

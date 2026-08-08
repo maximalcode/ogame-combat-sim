@@ -1,6 +1,6 @@
 # ogame-combat-sim
 
-A fast OGame v7 fleet combat simulator, written in Rust.
+A fast OGame fleet combat simulator, written in Rust.
 
 Combat in OGame is stochastic — the same fleets sent twice give different
 results. A single battle tells you almost nothing, so this runs the battle
@@ -12,7 +12,7 @@ costs you when you do, and whether the debris field pays for the trip.
 
 ## What it models
 
-The engine implements OGame v7 combat as it actually behaves:
+The engine implements OGame's combat resolution as it actually behaves:
 
 - **Rounds** — up to six, with shields regenerating between them
 - **Rapid fire** — the full cross-table, including chained re-rolls
@@ -23,6 +23,33 @@ The engine implements OGame v7 combat as it actually behaves:
 - **Loot** — plunder at 50/75/100%, capped by surviving cargo capacity
 - **Downscaling** — battles above ten million ships are simulated at reduced
   scale and extrapolated, so a fleet of any size resolves in reasonable time
+
+## Accuracy — what is and is not modelled
+
+Combat resolution itself has been stable for years: rounds, rapid fire, the
+bounce rule, shield regeneration, the explosion roll, the `+10% per level`
+technology scaling and the ship stat table are unchanged from v7 through the
+current v13. All of that is implemented and tested here.
+
+What is **not** yet applied is everything added since that injects per-ship stat
+modifiers:
+
+| Missing | Since | Effect |
+| --- | --- | --- |
+| Lifeform research bonuses | v9 (2022) | Per-ship-type bonus to hull, shield and firepower. The largest gap by far. |
+| Player class bonuses | v7 | General grants +2 effective Weapons/Shielding/Armour levels |
+| Alliance class bonuses | v8 (2021) | Warrior grants +1 effective level to all three |
+| Deuterium in debris | v9.2 (2023) | A per-universe option; only metal and crystal are produced here |
+| v13 instant-calc rule | v13 (2026) | Battles short-circuit above a 10,000× attack-power ratio |
+
+In practice: for a battle with no lifeforms and no classes, results should be
+sound. For a developed 2026 account they will be optimistic or pessimistic
+depending on who holds the bonuses, because the engine currently sees none of
+them. All five are tracked in the issues, and the fix is one additive term per
+stat rather than anything structural.
+
+Stating this plainly matters more than the gaps do — every simulator in this
+space advertises accuracy and none of them publish what they get wrong.
 
 ## Quick start
 
@@ -137,11 +164,13 @@ Work happens on `develop`; `main` is the reviewed branch.
 ## Provenance
 
 This is an independent reimplementation. OGame's combat mechanics were worked
-out by observing behaviour and comparing results against
-[TrashSim](https://trashsim.universeview.be/) by Klaas, whose simulator was the
-reference for correctness. No TrashSim code, assets, or styling are used here —
-game mechanics are not copyrightable, but assets and code are, and none were
-copied. Ship and defence statistics are OGame game data.
+out by observing behaviour and comparing results against TrashSim by Klaas,
+which was the reference for correctness. TrashSim went offline in 2026 and its
+forum thread is archived; its engine survives as
+[MIT-licensed source](https://github.com/klaasvp/trashsim-public). No TrashSim
+code, assets, or styling are used here — game mechanics are not copyrightable,
+but assets and code are, and none were copied. Ship and defence statistics are
+OGame game data.
 
 If you represent Gameforge and want something changed, open an issue.
 

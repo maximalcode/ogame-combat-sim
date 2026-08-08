@@ -13,7 +13,7 @@ rust-version = "1.85"
 authors = ["maximalcode"]
 license = "MIT"
 repository = "https://github.com/maximalcode/ogame-combat-sim"
-description = "A fast OGame v7 fleet combat simulator"
+description = "A fast OGame fleet combat simulator"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
