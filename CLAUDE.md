@@ -93,6 +93,23 @@ cargo fmt --check && cargo clippy --workspace --all-targets && cargo test --work
   manifest, so local `cargo check` warns instead of failing.
 - Planning lives in GitHub issues and milestones, not in checked-in documents.
 
+## Agent skills
+
+### Issue tracker
+
+GitHub issues on `maximalcode/ogame-combat-sim`, via the `gh` CLI. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See
+`docs/agents/domain.md`.
+
 ## Provenance
 
 Unofficial fan tool, not affiliated with Gameforge. Combat mechanics were
