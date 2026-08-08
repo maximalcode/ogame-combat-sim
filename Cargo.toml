@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = [
+    "combat-core",
+    "combat-types",
+    "combat-api",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["maximalcode"]
+license = "MIT"
+repository = "https://github.com/maximalcode/ogame-combat-sim"
+description = "A fast OGame v7 fleet combat simulator"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# small_rng gives SmallRng, which is ~3x faster than the default and is fine
+# here — nothing about a battle simulation needs cryptographic randomness.
+rand = { version = "0.9", features = ["small_rng"] }
+
+rayon = "1.10"
+num_cpus = "1.16"
+
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tower-http = { version = "0.6", features = ["cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+approx = "0.5"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = true
+
+# The engine is a Monte Carlo loop, and an unoptimised Monte Carlo loop is
+# pathologically slow: the 20M-ship downscaling test takes 135s at opt-level 0
+# and 9.5s at 3. Tests are compiled optimised so CI does not spend eleven
+# minutes proving something a release build settles in ten seconds.
+[profile.test]
+opt-level = 3
