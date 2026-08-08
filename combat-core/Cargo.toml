@@ -6,7 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "The OGame v7 fleet combat engine: rounds, rapid fire, shield bounce, explosions, debris and loot"
+description = "The OGame fleet combat engine: rounds, rapid fire, shield bounce, explosions, debris and loot"
 
 [dependencies]
 combat-types = { path = "../combat-types", version = "0.1.0" }

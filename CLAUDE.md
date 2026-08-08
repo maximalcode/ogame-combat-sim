@@ -6,8 +6,18 @@ needs fixing.
 
 ## What this is
 
-An OGame v7 fleet-combat simulator. `combat-core` is the engine, `combat-types`
+An OGame fleet-combat simulator. `combat-core` is the engine, `combat-types`
 the shared data model, `combat-api` a small stateless axum server.
+
+**On versions.** The old repo called this "OGame v7" everywhere. That label was
+stale but the code mostly is not: combat resolution — rounds, rapid fire, the
+bounce rule, shield regen, the explosion roll, `+10%`-per-level tech scaling,
+the whole ship stat table — is unchanged from v7 through the current v13. What
+is genuinely missing is every post-v7 system that feeds *stat modifiers* in:
+lifeform research (v9), alliance classes (v8), player classes (v7 — the types
+exist but the engine never reads them), deuterium debris (v9.2) and v13's
+instant-calc short-circuit. All tracked in the issues. Do not reintroduce a
+version number into the docs; state what is modelled instead.
 
 This repository was started fresh in August 2026. Its predecessor began life as
 the combat engine for a private OGame-clone game, and roughly three quarters of
