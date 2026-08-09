@@ -60,6 +60,7 @@ second call silently does nothing, but it is process-wide state.
 ```bash
 cargo test --workspace            # ~25s including compile
 cargo run -p combat-api           # server on :3000
+cargo bench --bench engine        # criterion; first compile is slow, see below
 ```
 
 CI gate, worth running before pushing:
@@ -76,6 +77,13 @@ cargo fmt --check \
 
 ## Things that will surprise you
 
+- **`[profile.bench]` mirrors `[profile.release]`**, `lto = "fat"` and
+  `codegen-units = 1` included, so `cargo bench` recompiles the world the first
+  time and measures the binary that ships. It keeps symbols where release
+  strips them, because a stripped benchmark profiles as hex addresses. The
+  suite lives in `combat-core/benches/engine.rs` and every case runs the same
+  fixed `SIMULATIONS` count — change that constant and old numbers stop being
+  comparable.
 - **Tests are compiled optimised** via `[profile.test] opt-level = 3`. This is
   not a micro-optimisation: `downscaling_accuracy` simulates 20M ships without
   downscaling to prove the approximation holds, and it takes 135s at

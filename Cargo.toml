@@ -33,6 +33,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 approx = "0.5"
+criterion = "0.8"
 
 [profile.release]
 lto = "fat"
@@ -46,6 +47,18 @@ strip = true
 # minutes proving something a release build settles in ten seconds.
 [profile.test]
 opt-level = 3
+
+# A benchmark measures the binary you ship or it measures nothing, so this
+# mirrors [profile.release] — including `lto = "fat"` and `codegen-units = 1`,
+# which make `cargo bench` slow to compile and are the point. The one
+# deliberate difference is `strip`: release strips symbols, and a stripped
+# benchmark profiles as a wall of hex addresses.
+[profile.bench]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = false
+debug = true
 
 # maxi-quality — Rust lint baseline (clippy + rustc lints), issue #58.
 #

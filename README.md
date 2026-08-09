@@ -139,9 +139,9 @@ Fleets are keyed by OGame's own entity IDs.
 | `combat-core` | The engine: rounds, rapid fire, explosions, debris, loot, downscaling |
 | `combat-api` | A small stateless HTTP server over the engine |
 
-A command-line interface, benchmarks, and a web UI are planned but not yet
-here; see the [open issues](https://github.com/maximalcode/ogame-combat-sim/issues)
-for what is actually in progress. This README describes only what exists today.
+A command-line interface and a web UI are planned but not yet here; see the
+[open issues](https://github.com/maximalcode/ogame-combat-sim/issues) for what
+is actually in progress. This README describes only what exists today.
 
 ## Development
 
@@ -152,6 +152,16 @@ cargo test --workspace
 Tests are compiled optimised (`[profile.test] opt-level = 3`). The engine is a
 Monte Carlo loop, and an unoptimised one is roughly fourteen times slower — the
 suite takes seconds this way and minutes without it.
+
+```bash
+cargo bench
+```
+
+A criterion suite over four cases: the stat table loaded on its own, and small,
+medium and downscaled-large battles. `[profile.bench]` mirrors the release
+profile, so the first compile is slow and the numbers describe the binary that
+actually ships. This README quotes none of them — run it on your own hardware,
+because a benchmark figure from someone else's machine is decoration.
 
 Before pushing, the same gates CI runs:
 
