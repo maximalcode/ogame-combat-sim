@@ -17,17 +17,17 @@ pub fn total_ships(fleet: &FleetComposition) -> usize {
 }
 
 pub fn upscale_round_details(
-    details: &Option<Vec<RoundDetails>>,
+    details: Option<&[RoundDetails]>,
     factor: usize,
 ) -> Option<Vec<RoundDetails>> {
     match details {
         None => None,
         Some(v) => {
             if factor <= 1 {
-                return Some(v.clone());
+                return Some(v.to_vec());
             }
             let mut out = Vec::with_capacity(v.len());
-            for d in v.iter() {
+            for d in v {
                 out.push(RoundDetails {
                     round_number: d.round_number,
                     attackers_start: d.attackers_start.saturating_mul(factor as u32),
@@ -72,14 +72,14 @@ fn upscale_round_comp(rc: &RoundComposition, factor: usize) -> RoundComposition 
 }
 
 pub fn upscale_round_compositions(
-    comps: &Option<Vec<RoundComposition>>,
+    comps: Option<&[RoundComposition]>,
     factor: usize,
 ) -> Option<Vec<RoundComposition>> {
     match comps {
         None => None,
         Some(v) => {
             if factor <= 1 {
-                return Some(v.clone());
+                return Some(v.to_vec());
             }
             Some(v.iter().map(|rc| upscale_round_comp(rc, factor)).collect())
         }
@@ -87,7 +87,7 @@ pub fn upscale_round_compositions(
 }
 
 pub fn upscale_round_compositions_by_slot(
-    by_slot: &Option<std::collections::HashMap<String, Vec<RoundComposition>>>,
+    by_slot: Option<&std::collections::HashMap<String, Vec<RoundComposition>>>,
     factor: usize,
 ) -> Option<std::collections::HashMap<String, Vec<RoundComposition>>> {
     match by_slot {
@@ -97,7 +97,7 @@ pub fn upscale_round_compositions_by_slot(
                 return Some(map.clone());
             }
             let mut out = std::collections::HashMap::with_capacity(map.len());
-            for (k, v) in map.iter() {
+            for (k, v) in map {
                 out.insert(
                     k.clone(),
                     v.iter().map(|rc| upscale_round_comp(rc, factor)).collect(),
@@ -123,18 +123,17 @@ pub fn upscale_slot_results(
             // Normalize key: simulate_single_with_slots labels as "A1"/"D1".
             // We accept either exact match or without first char; prefer exact.
             let empty: FleetComposition = HashMap::new();
-            let orig = match original_per_slot.get(&s.slot_id) {
-                Some(o) => o,
-                None => {
-                    let trimmed = s.slot_id.trim_start_matches(prefix).to_string();
-                    original_per_slot.get(&trimmed).unwrap_or(&empty)
-                }
+            let orig = if let Some(o) = original_per_slot.get(&s.slot_id) {
+                o
+            } else {
+                let trimmed = s.slot_id.trim_start_matches(prefix).to_string();
+                original_per_slot.get(&trimmed).unwrap_or(&empty)
             };
 
             let mut remaining: FleetComposition = HashMap::new();
             let mut initial: FleetComposition = HashMap::new();
 
-            for (&t, &orig_c) in orig.iter() {
+            for (&t, &orig_c) in orig {
                 let scaled_losses = s.losses.get(&t).copied().unwrap_or(0) * factor as u32;
                 let rem = if scaled_losses == 0 {
                     orig_c
@@ -151,7 +150,7 @@ pub fn upscale_slot_results(
 
             // Ensure losses = initial - remaining
             let mut losses: FleetComposition = HashMap::new();
-            for (&t, &init_c) in initial.iter() {
+            for (&t, &init_c) in &initial {
                 let rem = remaining.get(&t).copied().unwrap_or(0);
                 if init_c > rem {
                     losses.insert(t, init_c - rem);
@@ -169,12 +168,14 @@ pub fn upscale_slot_results(
 }
 
 /// Determine if a battle should be downscaled
+#[must_use]
 pub fn should_downscale(attacker: &PartyData, defender: &PartyData) -> bool {
     let total = total_ships(&attacker.entities) + total_ships(&defender.entities);
     total > DOWNSCALE_THRESHOLD
 }
 
 /// Calculate appropriate downscale factor based on fleet size
+#[must_use]
 pub fn calculate_downscale_factor(attacker: &PartyData, defender: &PartyData) -> usize {
     let total = total_ships(&attacker.entities) + total_ships(&defender.entities);
 
@@ -213,6 +214,7 @@ pub fn downscale_fleet(fleet: &FleetComposition, factor: usize) -> FleetComposit
 }
 
 /// Downscale party data
+#[must_use]
 pub fn downscale_party(party: &PartyData, factor: usize) -> PartyData {
     PartyData {
         technology: party.technology,
@@ -222,6 +224,7 @@ pub fn downscale_party(party: &PartyData, factor: usize) -> PartyData {
 
 /// Scale up simulation results with precision preservation
 /// This version tries to preserve the original fleet counts for survivors
+#[must_use]
 pub fn upscale_result_with_originals(
     result: &SimulationResult,
     factor: usize,
@@ -285,6 +288,7 @@ pub fn upscale_result_with_originals(
 }
 
 /// Scale up simulation results (legacy, for compatibility)
+#[must_use]
 pub fn upscale_result(result: &SimulationResult, factor: usize) -> SimulationResult {
     if factor <= 1 {
         return result.clone();
@@ -474,7 +478,7 @@ mod tests {
         assert_eq!(upscaled.loot.crystal, 10000);
         assert_eq!(upscaled.loot.deuterium, 5000);
         assert_eq!(upscaled.attacker_profit, 50000);
-        assert_eq!(upscaled.defender_profit, -30000)
+        assert_eq!(upscaled.defender_profit, -30000);
     }
 
     #[test]

@@ -1,6 +1,10 @@
 use combat_types::entities::load_entity_stats;
 /// Build comprehensive combat reports from simulation results
-use combat_types::*;
+use combat_types::{
+    CombatOutcome, CombatReport, CombatRequest, CombatResults, DebrisField, EconomicSummary,
+    EntityStats, EntityType, FleetComposition, FleetSnapshot, HarvestInfo, Participant,
+    PlanetResources, ResourceCost, SimulationResult, classify_battle_type,
+};
 use std::collections::HashMap;
 
 /// Builder for creating detailed combat reports
@@ -9,6 +13,7 @@ pub struct ReportBuilder {
 }
 
 impl ReportBuilder {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entity_db: load_entity_stats(),
@@ -16,6 +21,7 @@ impl ReportBuilder {
     }
 
     /// Convert a simulation result into a comprehensive combat report
+    #[must_use]
     pub fn build_report(
         &self,
         request: &CombatRequest,
@@ -117,6 +123,7 @@ impl ReportBuilder {
     }
 
     /// Build multiple reports from combat results
+    #[must_use]
     pub fn build_reports(
         &self,
         request: &CombatRequest,
@@ -145,6 +152,7 @@ impl ReportBuilder {
     }
 
     /// Build an aggregated summary report from multiple simulations
+    #[must_use]
     pub fn build_summary_report(
         &self,
         request: &CombatRequest,
@@ -155,10 +163,10 @@ impl ReportBuilder {
             .unwrap()
             .as_secs();
 
-        let battle_id = format!("cr-summary-{}", timestamp);
+        let battle_id = format!("cr-summary-{timestamp}");
 
         // Calculate average results
-        let avg_result = self.calculate_average_result(results);
+        let avg_result = Self::calculate_average_result(results);
 
         let mut report = self.build_report(request, &avg_result, Some(battle_id), Some(timestamp));
         report.simulation_count = results.simulations;
@@ -168,34 +176,32 @@ impl ReportBuilder {
     }
 
     /// Calculate average/most common result from multiple simulations
-    fn calculate_average_result(&self, results: &CombatResults) -> SimulationResult {
-        if results.results.is_empty() {
-            panic!("No results to average");
-        }
+    fn calculate_average_result(results: &CombatResults) -> SimulationResult {
+        assert!(!results.results.is_empty(), "No results to average");
 
         // Calculate average losses and remaining
-        let avg_attacker_losses = self.average_fleet(
+        let avg_attacker_losses = Self::average_fleet(
             &results
                 .results
                 .iter()
                 .map(|r| &r.attacker_losses)
                 .collect::<Vec<_>>(),
         );
-        let avg_defender_losses = self.average_fleet(
+        let avg_defender_losses = Self::average_fleet(
             &results
                 .results
                 .iter()
                 .map(|r| &r.defender_losses)
                 .collect::<Vec<_>>(),
         );
-        let avg_attacker_remaining = self.average_fleet(
+        let avg_attacker_remaining = Self::average_fleet(
             &results
                 .results
                 .iter()
                 .map(|r| &r.attacker_remaining)
                 .collect::<Vec<_>>(),
         );
-        let avg_defender_remaining = self.average_fleet(
+        let avg_defender_remaining = Self::average_fleet(
             &results
                 .results
                 .iter()
@@ -210,8 +216,10 @@ impl ReportBuilder {
         let outcome = match (attacker_has_ships, defender_has_ships) {
             (true, false) => CombatOutcome::AttackersWin,
             (false, true) => CombatOutcome::DefendersWin,
-            (true, true) => CombatOutcome::Draw,
-            (false, false) => CombatOutcome::Draw,
+            // Both sides standing, or neither: the engine has no third word for
+            // it. Spelled as an or-pattern rather than a wildcard so adding a
+            // fourth outcome still has to visit this arm.
+            (true, true) | (false, false) => CombatOutcome::Draw,
         };
 
         // Average debris
@@ -220,25 +228,25 @@ impl ReportBuilder {
             .iter()
             .map(|r| r.debris_field.metal)
             .sum::<u64>()
-            / results.simulations as u64;
+            / u64::from(results.simulations);
         let avg_debris_crystal = results
             .results
             .iter()
             .map(|r| r.debris_field.crystal)
             .sum::<u64>()
-            / results.simulations as u64;
+            / u64::from(results.simulations);
 
         // Average loot
-        let avg_loot_metal =
-            results.results.iter().map(|r| r.loot.metal).sum::<u64>() / results.simulations as u64;
+        let avg_loot_metal = results.results.iter().map(|r| r.loot.metal).sum::<u64>()
+            / u64::from(results.simulations);
         let avg_loot_crystal = results.results.iter().map(|r| r.loot.crystal).sum::<u64>()
-            / results.simulations as u64;
+            / u64::from(results.simulations);
         let avg_loot_deut = results
             .results
             .iter()
             .map(|r| r.loot.deuterium)
             .sum::<u64>()
-            / results.simulations as u64;
+            / u64::from(results.simulations);
 
         // Average profit
         let avg_attacker_profit = results
@@ -246,13 +254,13 @@ impl ReportBuilder {
             .iter()
             .map(|r| r.attacker_profit)
             .sum::<i64>()
-            / results.simulations as i64;
+            / i64::from(results.simulations);
         let avg_defender_profit = results
             .results
             .iter()
             .map(|r| r.defender_profit)
             .sum::<i64>()
-            / results.simulations as i64;
+            / i64::from(results.simulations);
 
         SimulationResult {
             outcome,
@@ -281,7 +289,7 @@ impl ReportBuilder {
     }
 
     /// Average fleet compositions
-    fn average_fleet(&self, fleets: &[&FleetComposition]) -> FleetComposition {
+    fn average_fleet(fleets: &[&FleetComposition]) -> FleetComposition {
         if fleets.is_empty() {
             return HashMap::new();
         }
@@ -318,9 +326,9 @@ impl ReportBuilder {
 
         for (&entity_type, &count) in fleet {
             if let Some(stats) = self.entity_db.get(&entity_type) {
-                total_value.metal += stats.cost_metal as u64 * count as u64;
-                total_value.crystal += stats.cost_crystal as u64 * count as u64;
-                total_value.deuterium += stats.cost_deuterium as u64 * count as u64;
+                total_value.metal += u64::from(stats.cost_metal) * u64::from(count);
+                total_value.crystal += u64::from(stats.cost_crystal) * u64::from(count);
+                total_value.deuterium += u64::from(stats.cost_deuterium) * u64::from(count);
             }
         }
 

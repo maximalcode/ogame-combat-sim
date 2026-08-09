@@ -154,3 +154,28 @@ missing_panics_doc = "allow"
 # Flags `req`/`res`-class name pairs that idiomatic code uses constantly;
 # naming taste, not a defect, and the false-positive rate swamps the signal.
 similar_names = "allow"
+
+# --- repo-specific, BELOW the copied block ------------------------------------
+# Everything above this line comes from maxi-quality's configs/rust/lints.toml
+# and should be regenerated with adopt.sh, not hand-edited. Everything below is
+# this repository's own policy.
+#
+# THE CAST FAMILY. Four lints, ~200 sites, and the same answer to all of them:
+# this is a numeric simulator. Ship counts are u32, combat maths is f32/f64, and
+# every round crosses between them — damage is computed in floating point and
+# ships die in integers. The casts are not accidents to be tightened up later;
+# they are the model. `try_from` at each site would turn "how many ships died"
+# into a fallible operation with no meaningful error arm, and the alternative —
+# an `#[allow]` on 200 individual expressions — is a worse form of the same
+# statement. Stated once, here, where it can be argued with.
+#
+# What this does NOT waive: a cast that loses something the *domain* cares
+# about is still a bug, and the downscaling accuracy test is what catches it.
+# f64 -> u32 on a ship count.
+cast_possible_truncation = "allow"
+# u64 -> f64 on resource totals, for averaging and percentages.
+cast_precision_loss = "allow"
+# f64 -> u64 after a `.max(0.0)`, which the lint does not track.
+cast_sign_loss = "allow"
+# u64 -> i64 when computing a profit, which is genuinely signed.
+cast_possible_wrap = "allow"

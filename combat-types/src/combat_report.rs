@@ -1,6 +1,6 @@
 use crate::{CombatOutcome, DebrisField, FleetComposition, PlanetResources, Technology};
 /// Comprehensive combat report structure for displaying in-game
-/// This mirrors what players see in OGame combat reports
+/// This mirrors what players see in `OGame` combat reports
 use serde::{Deserialize, Serialize};
 
 /// Participant in combat (attacker or defender)
@@ -44,6 +44,7 @@ pub struct ResourceCost {
 }
 
 impl ResourceCost {
+    #[must_use]
     pub fn total(&self) -> u64 {
         self.metal + self.crystal + self.deuterium
     }
@@ -239,6 +240,7 @@ pub enum BattleType {
 
 impl CombatReport {
     /// Create a report ID from timestamp and participants
+    #[must_use]
     pub fn generate_battle_id(
         timestamp: u64,
         attacker_id: Option<u64>,
@@ -253,7 +255,8 @@ impl CombatReport {
     }
 
     /// Calculate moon creation chance based on debris size
-    /// OGame formula: chance = min(20%, debris_size / 100_000)
+    /// `OGame` formula: chance = min(20%, `debris_size` / `100_000`)
+    #[must_use]
     pub fn calculate_moon_chance(debris_field: &DebrisField) -> f64 {
         let debris_total = debris_field.total() as f64;
 
@@ -262,6 +265,7 @@ impl CombatReport {
 
     /// Calculate recyclers needed for debris collection
     /// Each recycler has 20k cargo capacity
+    #[must_use]
     pub fn calculate_recyclers_needed(debris_field: &DebrisField) -> u32 {
         const RECYCLER_CAPACITY: u64 = 20_000;
         let total_debris = debris_field.total();
@@ -270,19 +274,21 @@ impl CombatReport {
 
     /// Estimate harvest time based on debris and distance
     /// Simplified formula - you can adjust based on your game mechanics
+    #[must_use]
     pub fn estimate_harvest_time(recyclers: u32, debris_field: &DebrisField) -> u32 {
         const SECONDS_PER_TRIP: u32 = 60; // Placeholder - adjust based on distance
         if recyclers == 0 {
             return 0;
         }
         let total_debris = debris_field.total();
-        let capacity = recyclers as u64 * 20_000;
+        let capacity = u64::from(recyclers) * 20_000;
         let trips = total_debris.div_ceil(capacity).max(1);
         trips as u32 * SECONDS_PER_TRIP
     }
 }
 
 /// Helper function to classify battle type
+#[must_use]
 pub fn classify_battle_type(
     attacker_ships: &FleetComposition,
     defender_ships: &FleetComposition,

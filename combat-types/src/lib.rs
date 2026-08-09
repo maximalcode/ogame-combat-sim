@@ -182,6 +182,7 @@ pub struct PlanetResources {
 }
 
 impl PlanetResources {
+    #[must_use]
     pub fn total(&self) -> u64 {
         self.metal + self.crystal + self.deuterium
     }
@@ -195,6 +196,7 @@ pub struct DebrisField {
 }
 
 impl DebrisField {
+    #[must_use]
     pub fn total(&self) -> u64 {
         self.metal + self.crystal
     }
@@ -307,6 +309,7 @@ pub struct CombatResults {
 }
 
 impl CombatResults {
+    #[must_use]
     pub fn new(simulations: u32) -> Self {
         Self {
             simulations,
@@ -328,15 +331,18 @@ impl CombatResults {
         self.results.push(result);
     }
 
+    #[must_use]
     pub fn attacker_win_rate(&self) -> f64 {
-        self.attacker_wins as f64 / self.simulations as f64
+        f64::from(self.attacker_wins) / f64::from(self.simulations)
     }
 
+    #[must_use]
     pub fn defender_win_rate(&self) -> f64 {
-        self.defender_wins as f64 / self.simulations as f64
+        f64::from(self.defender_wins) / f64::from(self.simulations)
     }
 
+    #[must_use]
     pub fn draw_rate(&self) -> f64 {
-        self.draws as f64 / self.simulations as f64
+        f64::from(self.draws) / f64::from(self.simulations)
     }
 }

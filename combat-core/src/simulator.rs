@@ -17,6 +17,7 @@ pub struct Simulator {
 }
 
 impl Simulator {
+    #[must_use]
     pub fn new() -> Self {
         // Configure Rayon thread pool for optimal performance
         // Use 75% of available CPUs to leave room for other processes
@@ -25,7 +26,7 @@ impl Simulator {
 
         rayon::ThreadPoolBuilder::new()
             .num_threads(sim_threads)
-            .thread_name(|i| format!("combat-sim-{}", i))
+            .thread_name(|i| format!("combat-sim-{i}"))
             .build_global()
             .ok(); // Ignore error if already initialized
 
@@ -40,7 +41,7 @@ impl Simulator {
         attacker_slots: &[(String, PartyData)],
         defender_slots: &[(String, PartyData)],
         use_rapid_fire: bool,
-        planet_resources: &Option<PlanetResources>,
+        planet_resources: Option<&PlanetResources>,
         debris_percentage: f32,
         collect_compositions: bool,
     ) -> SimulationResult {
@@ -111,7 +112,7 @@ impl Simulator {
         attacker: &PartyData,
         defender: &PartyData,
         use_rapid_fire: bool,
-        planet_resources: &Option<PlanetResources>,
+        planet_resources: Option<&PlanetResources>,
         debris_percentage: f32,
         collect_compositions: bool,
     ) -> SimulationResult {
@@ -183,14 +184,19 @@ impl Simulator {
     }
 
     /// Run multiple simulations in parallel and aggregate results
+    // Long for the same reason as `simulate_single_with_slots`: downscaling,
+    // slots and upscaling all have to agree, and the agreement is easier to
+    // read in one place than spread over helpers that must be called in order.
+    #[allow(clippy::too_many_lines)]
     pub fn simulate_multiple(&self, request: &CombatRequest) -> CombatResults {
         let start = std::time::Instant::now();
 
         // Check if we should downscale for large battles
         let downscale_factor = match request.enable_downscaling {
             Some(false) => 1, // Force disable downscaling
-            Some(true) => calculate_downscale_factor(&request.attacker, &request.defender), // Force enable
-            None => calculate_downscale_factor(&request.attacker, &request.defender), // Auto (default)
+            // Explicit opt-in and the default behave identically: the factor
+            // calculation already returns 1 when the fleets are small enough.
+            Some(true) | None => calculate_downscale_factor(&request.attacker, &request.defender),
         };
 
         let (attacker_data, defender_data) = if downscale_factor > 1
@@ -317,7 +323,7 @@ impl Simulator {
                             a_s_arc.as_slice(),
                             d_s_arc.as_slice(),
                             request.use_rapid_fire,
-                            &request.planet_resources,
+                            request.planet_resources.as_ref(),
                             request.debris_percentage,
                             collect,
                         )
@@ -326,7 +332,7 @@ impl Simulator {
                             a_o_arc.as_slice(),
                             d_o_arc.as_slice(),
                             request.use_rapid_fire,
-                            &request.planet_resources,
+                            request.planet_resources.as_ref(),
                             request.debris_percentage,
                             collect,
                         )
@@ -336,7 +342,7 @@ impl Simulator {
                         &attacker_data,
                         &defender_data,
                         request.use_rapid_fire,
-                        &request.planet_resources,
+                        request.planet_resources.as_ref(),
                         request.debris_percentage,
                         collect,
                     )
@@ -351,14 +357,17 @@ impl Simulator {
                         &original_defender,
                     );
                     // Upscale round compositions for user-facing numbers
-                    up.round_compositions =
-                        upscale_round_compositions(&up.round_compositions, downscale_factor);
+                    up.round_compositions = upscale_round_compositions(
+                        up.round_compositions.as_deref(),
+                        downscale_factor,
+                    );
                     up.round_compositions_by_slot = upscale_round_compositions_by_slot(
-                        &up.round_compositions_by_slot,
+                        up.round_compositions_by_slot.as_ref(),
                         downscale_factor,
                     );
                     // Upscale RoundDetails (shots, hull damage, shield absorb, totals)
-                    up.round_details = upscale_round_details(&up.round_details, downscale_factor);
+                    up.round_details =
+                        upscale_round_details(up.round_details.as_deref(), downscale_factor);
                     // Upscale per-slot results if present
                     if used_downscaling_slots {
                         if let Some(a_slots) = &up.attacker_slots {
@@ -394,12 +403,12 @@ impl Simulator {
         let mut total_rounds = 0u64;
 
         for result in simulation_results {
-            total_rounds += result.rounds as u64;
+            total_rounds += u64::from(result.rounds);
             results.add_result(result);
         }
 
         results.duration_ms = start.elapsed().as_millis() as u64;
-        results.average_rounds = total_rounds as f64 / request.simulations as f64;
+        results.average_rounds = total_rounds as f64 / f64::from(request.simulations);
 
         results
     }

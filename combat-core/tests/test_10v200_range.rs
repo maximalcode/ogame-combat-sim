@@ -1,3 +1,8 @@
+// A scenario script: set up a fleet, run it, print the numbers, assert on
+// them. Length here is the scenario being explicit, not a function doing
+// too much, so clippy::too_many_lines is waived for the file.
+#![allow(clippy::too_many_lines)]
+
 /// Test 10 Cruisers vs 200 LFs - Range Analysis
 use combat_core::Simulator;
 use combat_types::{CombatRequest, PartyData, Technology};
@@ -92,50 +97,38 @@ fn test_10_cruisers_vs_200_lfs_range() {
     println!(
         "    • Attacker Wins: {} ({:.1}%)",
         results.attacker_wins,
-        (results.attacker_wins as f64 / 10.0)
+        (f64::from(results.attacker_wins) / 10.0)
     );
     println!(
         "    • Defender Wins: {} ({:.1}%)",
         results.defender_wins,
-        (results.defender_wins as f64 / 10.0)
+        (f64::from(results.defender_wins) / 10.0)
     );
     println!(
         "    • Draws: {} ({:.1}%)",
         results.draws,
-        (results.draws as f64 / 10.0)
+        (f64::from(results.draws) / 10.0)
     );
     println!();
 
     println!("  Cruiser Survivors:");
-    println!(
-        "    • Best Case: {} Cruisers survive",
-        max_cruiser_survivors
-    );
-    println!(
-        "    • Worst Case: {} Cruisers survive",
-        min_cruiser_survivors
-    );
-    println!(
-        "    • Range: {}-{} survivors",
-        min_cruiser_survivors, max_cruiser_survivors
-    );
+    println!("    • Best Case: {max_cruiser_survivors} Cruisers survive");
+    println!("    • Worst Case: {min_cruiser_survivors} Cruisers survive");
+    println!("    • Range: {min_cruiser_survivors}-{max_cruiser_survivors} survivors");
     println!();
 
     println!("  LF Survivors:");
-    println!("    • Best Case: {} LFs survive", min_lf_survivors);
-    println!("    • Worst Case: {} LFs survive", max_lf_survivors);
-    println!(
-        "    • Range: {}-{} survivors",
-        min_lf_survivors, max_lf_survivors
-    );
+    println!("    • Best Case: {min_lf_survivors} LFs survive");
+    println!("    • Worst Case: {max_lf_survivors} LFs survive");
+    println!("    • Range: {min_lf_survivors}-{max_lf_survivors} survivors");
     println!();
 
     println!("  Round Distribution:");
     let mut sorted_rounds: Vec<_> = round_distribution.iter().collect();
     sorted_rounds.sort_by_key(|(k, _)| **k);
     for (rounds, count) in sorted_rounds {
-        let percentage = (*count as f64 / 1000.0) * 100.0;
-        println!("    Round {}: {} times ({:.1}%)", rounds, count, percentage);
+        let percentage = (f64::from(*count) / 1000.0) * 100.0;
+        println!("    Round {rounds}: {count} times ({percentage:.1}%)");
     }
     println!();
 
@@ -159,14 +152,8 @@ fn test_10_cruisers_vs_200_lfs_range() {
     let cruiser_range = max_cruiser_survivors - min_cruiser_survivors;
     let lf_range = max_lf_survivors - min_lf_survivors;
 
-    println!(
-        "  • Cruiser survivor variance: {} (spread of outcomes)",
-        cruiser_range
-    );
-    println!(
-        "  • LF survivor variance: {} (spread of outcomes)",
-        lf_range
-    );
+    println!("  • Cruiser survivor variance: {cruiser_range} (spread of outcomes)");
+    println!("  • LF survivor variance: {lf_range} (spread of outcomes)");
 
     if cruiser_range > 5 || lf_range > 50 {
         println!("  ✅ High variance - RNG working, battles unpredictable");
