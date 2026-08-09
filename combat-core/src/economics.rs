@@ -8,10 +8,9 @@ use combat_types::EntityStats;
 use combat_types::{DebrisField, DebrisSettings, EntityType, FleetComposition, PlanetResources};
 use std::collections::HashMap;
 
-/// Entity ids below this are ships; `400..500` are defences. The two leave
+/// Defences occupy ids `400..500`; everything below is a ship. The two leave
 /// debris at different rates, and in a standard universe defences leave none.
-const FIRST_DEFENCE_ID: EntityType = 400;
-const FIRST_NON_DEFENCE_ID: EntityType = 500;
+const DEFENCE_IDS: std::ops::Range<EntityType> = 400..500;
 
 /// Calculate the debris field left by a battle's losses.
 ///
@@ -30,68 +29,41 @@ pub fn calculate_debris(
     let fleet_factor = f32::from(settings.fleet_percentage) / 100.0;
     let defence_factor = f32::from(settings.defence_percentage) / 100.0;
 
+    // The rate a wreck of this type leaves debris at, or `None` for one that
+    // leaves none: an id outside both ranges, or a defence on the attacking
+    // side, which cannot happen but is not this function's to assume.
+    let rate = |entity_type: EntityType, defending: bool| {
+        if entity_type < DEFENCE_IDS.start {
+            Some(fleet_factor)
+        } else if defending && DEFENCE_IDS.contains(&entity_type) {
+            Some(defence_factor)
+        } else {
+            None
+        }
+    };
+
     let mut field = DebrisField::default();
 
-    // Attacker losses are always ships.
-    for (&entity_type, &count) in attacker_losses {
-        if entity_type < FIRST_DEFENCE_ID {
-            add_wreck(
-                &mut field,
-                entity_db,
-                entity_type,
-                count,
-                fleet_factor,
-                settings.deuterium,
-            );
-        }
-    }
+    for (losses, defending) in [(attacker_losses, false), (defender_losses, true)] {
+        for (&entity_type, &count) in losses {
+            let (Some(factor), Some(stats)) =
+                (rate(entity_type, defending), entity_db.get(&entity_type))
+            else {
+                // An unknown id contributes nothing, as it always has.
+                continue;
+            };
 
-    for (&entity_type, &count) in defender_losses {
-        if entity_type < FIRST_DEFENCE_ID {
-            add_wreck(
-                &mut field,
-                entity_db,
-                entity_type,
-                count,
-                fleet_factor,
-                settings.deuterium,
-            );
-        } else if entity_type < FIRST_NON_DEFENCE_ID {
-            add_wreck(
-                &mut field,
-                entity_db,
-                entity_type,
-                count,
-                defence_factor,
-                settings.deuterium,
-            );
+            let share = |cost: u32| (cost as f32 * factor * count as f32) as u64;
+
+            field.metal += share(stats.cost_metal);
+            field.crystal += share(stats.cost_crystal);
+            if settings.deuterium {
+                field.deuterium += share(stats.cost_deuterium);
+            }
         }
     }
 
     field
-}
-
-/// Add one entity type's share of a wreck to the field. Unknown ids contribute
-/// nothing, which is how they have always been treated.
-fn add_wreck(
-    field: &mut DebrisField,
-    entity_db: &HashMap<EntityType, EntityStats>,
-    entity_type: EntityType,
-    count: u32,
-    factor: f32,
-    include_deuterium: bool,
-) {
-    let Some(stats) = entity_db.get(&entity_type) else {
-        return;
-    };
-
-    let share = |cost: u32| (cost as f32 * factor * count as f32) as u64;
-
-    field.metal += share(stats.cost_metal);
-    field.crystal += share(stats.cost_crystal);
-    if include_deuterium {
-        field.deuterium += share(stats.cost_deuterium);
-    }
 }
 
 /// Calculate loot from planet resources

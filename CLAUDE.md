@@ -32,7 +32,7 @@ itself was carried over intact — it was never contaminated.
 
 | Path | Contents |
 | --- | --- |
-| `combat-types/src/lib.rs` | `CombatRequest`, `PartyData`, `Technology`, `CombatResults`, `SimulationResult` |
+| `combat-types/src/lib.rs` | `CombatRequest`, `PartyData`, `Technology`, `CombatResults`, `SimulationResult`, `UniverseSettings`, `DebrisSettings` |
 | `combat-types/src/entities.rs` | `entity_stats()` / `load_entity_stats()` — the full ship and defence stat table |
 | `combat-types/src/names.rs` | `ENTITY_INFO`, `resolve()`, `name_of()` — names and aliases, hand-written, kept in sync by test |
 | `combat-types/src/combat_report.rs` | `CombatReport`, debris, moon chance, recycler maths |
@@ -111,7 +111,17 @@ cargo fmt --check \
   only — no defence debris, no deuterium — which is exactly what the engine did
   before any of this was read, so a request with `universe_settings: null`
   produces the wreck field it always did. Two tests in `combat-types/src/lib.rs`
-  pin both halves of the rule; do not "simplify" it to one source.
+  pin both halves of the rule; do not "simplify" it to one source. The sharp
+  edge: `UniverseSettings` defaults every field, so a block that sets only
+  `galaxies` still wins, and its `debris_fleet` default of 30 quietly overrides
+  a `debris_percentage` of 70. `CombatResults::debris_settings` reports what was
+  actually used, which is the fastest way to see it happen.
+- **`DebrisField::total()` counts deuterium**, and that total feeds moon chance,
+  the recycler count and both profit figures in
+  `combat-types/src/combat_report.rs`. So enabling deuterium debris on a
+  universe moves the moon roll and the harvest estimate too. That is correct —
+  recyclers do collect it — but it means a change to the debris maths is never
+  only a change to the debris maths.
 - **`/api/simulate` overrides the request.** It caps `simulations` at
   `MAX_SIMULATIONS` (default 1000) and forces `enable_downscaling = None`.
   Both are HTTP-layer server protection; the library has no limits. **The CLI
