@@ -4,10 +4,14 @@ name: quality
 # OSV-Scanner) runs beside the Rust job that used to live in ci.yml — one file,
 # so there is one answer to "is this commit green".
 on:
+  # Push is filtered so a feature branch is not checked twice — once for the
+  # push and once for its pull request.
   push:
     branches: [main, develop]
+  # Pull request is NOT filtered, deliberately. Filtering it to [main, develop]
+  # means a PR stacked on another feature branch gets no checks at all and
+  # reports as green by having nothing to report, which is worse than red.
   pull_request:
-    branches: [main, develop]
 
 # A superseded run tells you nothing you will act on, so cancel it rather than
 # leaving it to finish against a commit nobody is looking at any more.
