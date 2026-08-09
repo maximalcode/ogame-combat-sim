@@ -33,8 +33,7 @@ bounce rule, shield regeneration, the explosion roll, the `+10% per level`
 technology scaling and the ship stat table are unchanged from v7 through the
 current v13. All of that is implemented and tested here.
 
-What is **not** yet applied is everything added since that injects per-ship stat
-modifiers:
+What is **not** yet applied:
 
 | Missing | Since | Effect |
 | --- | --- | --- |
@@ -47,6 +46,11 @@ costs: destroyed defences are never rebuilt here, where the game gives each one
 a 70% chance of coming back free — 85% with an Engineer. Defence losses in this
 simulator are therefore the worst case for the defender. The Engineer flag a
 request can carry is read by nothing for that reason.
+
+The General's other perk — a small chance for a Light Fighter to destroy a
+Deathstar outright — is not implemented either. Sources split between 1-in-1000
+and 1-in-10000 and none of them are official, so there is no number here worth
+committing to. It is recorded rather than quietly dropped.
 
 In practice: for a battle without lifeforms, results should be sound, classes
 included. For a developed 2026 account they will be optimistic or pessimistic

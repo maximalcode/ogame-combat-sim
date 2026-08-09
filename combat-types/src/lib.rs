@@ -233,10 +233,12 @@ impl PartyData {
     /// [effective levels](Technology::effective_levels).
     ///
     /// The fleet comes through untouched — classes modify stats, never ship
-    /// counts. This is the call the simulator makes once per side, which is
-    /// how the attacker's class stays off the defender's ships.
+    /// counts. Named for what it returns rather than what it is given: the
+    /// bonuses are resolved here and do not survive the call, which is the
+    /// whole point — nothing downstream can tell a granted level from a
+    /// researched one.
     #[must_use]
-    pub fn with_bonuses(&self, bonuses: Option<&PlayerBonuses>) -> Self {
+    pub fn at_effective_levels(&self, bonuses: Option<&PlayerBonuses>) -> Self {
         Self {
             technology: self.technology.effective_levels(bonuses),
             entities: self.entities.clone(),
@@ -378,6 +380,30 @@ impl Default for CombatRequest {
             defender_bonuses: None,
             plunder_percentage: default_plunder_percentage(),
         }
+    }
+}
+
+impl CombatRequest {
+    /// The attacking side as it actually fights: its fleet, at the levels its
+    /// classes are worth.
+    ///
+    /// The pairing of a party with *its own* bonus block lives here rather than
+    /// at each call site. Reading `attacker_bonuses` beside `defender` is a bug
+    /// no test of either half would catch, and there is more than one consumer
+    /// — the simulator fights the battle, the report builder states what it was
+    /// fought at. Both go through these two methods so they cannot disagree.
+    #[must_use]
+    pub fn effective_attacker(&self) -> PartyData {
+        self.attacker
+            .at_effective_levels(self.attacker_bonuses.as_ref())
+    }
+
+    /// The defending side as it actually fights. See
+    /// [`effective_attacker`](Self::effective_attacker).
+    #[must_use]
+    pub fn effective_defender(&self) -> PartyData {
+        self.defender
+            .at_effective_levels(self.defender_bonuses.as_ref())
     }
 }
 
@@ -641,7 +667,7 @@ mod tests {
     }
 
     /// Classes change stats, never fleets. Worth pinning because
-    /// `with_bonuses` is the call the simulator makes on every battle.
+    /// `at_effective_levels` is the call the simulator makes on every battle.
     #[test]
     fn applying_bonuses_to_a_party_leaves_its_fleet_alone() {
         let party = PartyData {
@@ -649,9 +675,33 @@ mod tests {
             entities: HashMap::from([(204, 100)]),
         };
 
-        let boosted = party.with_bonuses(Some(&classes(PlayerClass::General, AllianceClass::None)));
+        let boosted =
+            party.at_effective_levels(Some(&classes(PlayerClass::General, AllianceClass::None)));
 
         assert_eq!(boosted.entities, party.entities);
         assert_eq!(boosted.technology, researched(12));
+    }
+
+    /// The pairing is the part worth pinning: each side must be resolved
+    /// against *its own* bonus block. Swapping them is a bug that a test of
+    /// either side alone would pass straight through.
+    #[test]
+    fn each_side_resolves_against_its_own_bonuses() {
+        let request = CombatRequest {
+            attacker: PartyData {
+                technology: researched(10),
+                entities: HashMap::from([(204, 100)]),
+            },
+            defender: PartyData {
+                technology: researched(4),
+                entities: HashMap::from([(401, 50)]),
+            },
+            attacker_bonuses: Some(classes(PlayerClass::General, AllianceClass::None)),
+            defender_bonuses: Some(classes(PlayerClass::None, AllianceClass::Warrior)),
+            ..Default::default()
+        };
+
+        assert_eq!(request.effective_attacker().technology, researched(12));
+        assert_eq!(request.effective_defender().technology, researched(5));
     }
 }

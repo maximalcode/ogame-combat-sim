@@ -191,12 +191,8 @@ impl Simulator {
         // loop, the stat cache — goes on seeing a plain `PartyData` and never
         // learns that classes exist. Per side, because the request carries one
         // bonus block per side and they are free to differ.
-        let attacker = request
-            .attacker
-            .with_bonuses(request.attacker_bonuses.as_ref());
-        let defender = request
-            .defender
-            .with_bonuses(request.defender_bonuses.as_ref());
+        let attacker = request.effective_attacker();
+        let defender = request.effective_defender();
 
         // Check if we should downscale for large battles
         let downscale_factor = match request.enable_downscaling {
@@ -216,8 +212,11 @@ impl Simulator {
                 downscale_party(&defender, downscale_factor),
             )
         } else {
-            // Use original fleets
-            (attacker.clone(), defender.clone())
+            // Moved, not cloned: these are already owned copies at effective
+            // levels, and on the path this branch serves — no downscaling, so
+            // fleets of any size up to ten million ships — the clone was of the
+            // whole composition for nothing.
+            (attacker, defender)
         };
         let used_downscaling_non_slot = downscale_factor > 1
             && request.attacker_slots.is_none()
@@ -253,7 +252,8 @@ impl Simulator {
                 .map(|s| {
                     (
                         s.id.clone(),
-                        s.data.with_bonuses(request.attacker_bonuses.as_ref()),
+                        s.data
+                            .at_effective_levels(request.attacker_bonuses.as_ref()),
                     )
                 })
                 .collect();
@@ -262,7 +262,8 @@ impl Simulator {
                 .map(|s| {
                     (
                         s.id.clone(),
-                        s.data.with_bonuses(request.defender_bonuses.as_ref()),
+                        s.data
+                            .at_effective_levels(request.defender_bonuses.as_ref()),
                     )
                 })
                 .collect();

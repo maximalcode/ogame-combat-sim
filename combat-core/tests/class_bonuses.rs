@@ -9,7 +9,7 @@
 use combat_core::{ReportBuilder, Simulator};
 use combat_types::{
     AllianceClass, CombatRequest, CombatResults, EntityType, FleetComposition, PartyData,
-    PlayerBonuses, PlayerClass, Technology,
+    PartySlot, PlayerBonuses, PlayerClass, Technology,
 };
 use std::collections::HashMap;
 
@@ -283,5 +283,75 @@ fn the_report_names_the_levels_the_battle_was_fought_at() {
         report.defender.technology,
         Technology::default(),
         "the defender has no class and gains nothing"
+    );
+}
+
+/// The slot path is a second, separate route through `simulate_multiple`, and
+/// it folds bonuses per slot rather than once per side. Nothing else in the
+/// repo exercises slot mode at all, so without this the whole branch is
+/// untested — and a side's classes belong to the *player*, so every slot that
+/// player fields has to fight under them.
+#[test]
+fn classes_reach_every_slot_on_their_own_side() {
+    let split_fleet = |bonuses: Option<PlayerBonuses>, weapons: u8| {
+        let slot = |id: &str, count: u32| PartySlot {
+            id: id.to_string(),
+            name: None,
+            data: PartyData {
+                technology: Technology {
+                    weapon: weapons,
+                    ..Default::default()
+                },
+                entities: HashMap::from([(LIGHT_FIGHTER, count)]),
+            },
+        };
+
+        let request = CombatRequest {
+            // The flat fields are ignored once slots are present, but the
+            // engine still reads them for downscaling, so they mirror the slots.
+            attacker: PartyData {
+                technology: Technology {
+                    weapon: weapons,
+                    ..Default::default()
+                },
+                entities: HashMap::from([(LIGHT_FIGHTER, FIGHTERS)]),
+            },
+            defender: PartyData {
+                technology: Technology::default(),
+                entities: HashMap::from([(LARGE_SHIELD_DOME, 1)]),
+            },
+            attacker_slots: Some(vec![slot("A1", FIGHTERS / 2), slot("A2", FIGHTERS / 2)]),
+            defender_slots: Some(vec![PartySlot {
+                id: "D1".to_string(),
+                name: None,
+                data: PartyData {
+                    technology: Technology::default(),
+                    entities: HashMap::from([(LARGE_SHIELD_DOME, 1)]),
+                },
+            }]),
+            attacker_bonuses: bonuses,
+            simulations: SIMULATIONS,
+            ..Default::default()
+        };
+
+        summarise(&Simulator::new().simulate_multiple(&request))
+    };
+
+    // Two levels short of the line, so the shots bounce and the dome survives.
+    let classless = split_fleet(None, WEAPONS_THAT_LAND - 2);
+    // The same fleet under a General, which is worth exactly those two levels.
+    let general = split_fleet(
+        Some(classes(PlayerClass::General, AllianceClass::None)),
+        WEAPONS_THAT_LAND - 2,
+    );
+    let two_more_levels = split_fleet(None, WEAPONS_THAT_LAND);
+
+    assert_ne!(
+        general, classless,
+        "a General must change the outcome through the slot path too"
+    );
+    assert_eq!(
+        general, two_more_levels,
+        "and must change it by exactly two levels, as on the flat path"
     );
 }

@@ -108,13 +108,30 @@ cargo fmt --check \
 - **Class bonuses are levels, resolved before combat starts.** A General is
   worth +2 Weapons/Shielding/Armour and a Warrior alliance +1, they add, and +3
   is the ceiling. `Technology::effective_levels` folds a side's
-  `PlayerBonuses` into its `Technology`, and `Simulator::simulate_multiple`
-  calls it once per side — so the engine, the stat cache and downscaling all go
-  on seeing a plain `PartyData` and cannot tell a researched level from a
-  granted one. That is the whole design: **do not** add a class multiplier
-  inside `ModifiedStats::calculate`, because `+10%` per level is applied once
-  to the total, and a General with Weapons 10 must compute as Weapons 12 rather
-  than as Weapons 10 times something.
+  `PlayerBonuses` into its `Technology`, and everything that needs the result
+  goes through `CombatRequest::effective_attacker` / `effective_defender` —
+  there are two consumers, the simulator (which fights the battle) and the
+  report builder (which states what it was fought at), and pairing a side with
+  the *other* side's bonuses is a bug neither one's tests would catch. Below
+  that seam the engine, the stat cache and downscaling all go on seeing a plain
+  `PartyData` and cannot tell a researched level from a granted one. That is
+  the whole design: **do not** add a class multiplier inside
+  `ModifiedStats::calculate`, because `+10%` per level is applied once to the
+  total, and a General with Weapons 10 must compute as Weapons 12 rather than
+  as Weapons 10 times something.
+- **A report states effective levels, not researched ones.** `Participant.
+  technology` in a `CombatReport` — and so the CLI header and the `report` half
+  of the `/api/simulate` response — is what the side actually fought at. A
+  General who researched 10 is reported as 12. Showing the researched figure
+  beside a battle resolved at the higher one reads as a bug, and there is
+  nowhere in the report to show both.
+- **Two OGame mechanics are known and deliberately not implemented**, because
+  neither could be sourced to a number worth committing to. The Light Fighter's
+  chance to destroy a Deathstar outright (a General perk): sources split
+  between 1-in-1000 and 1-in-10000 with nothing official either way. The
+  Engineer officer: see the inert-fields bullet above. Guessing either would
+  put a fabricated constant into a simulator whose whole selling point is
+  stating what it gets wrong.
 - **`/api/simulate` overrides the request.** It caps `simulations` at
   `MAX_SIMULATIONS` (default 1000) and forces `enable_downscaling = None`.
   Both are HTTP-layer server protection; the library has no limits. **The CLI
