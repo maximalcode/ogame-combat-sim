@@ -17,7 +17,10 @@ pub struct Participant {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coordinates: Option<String>,
 
-    /// Technology levels
+    /// The technology levels this participant fought at — effective levels,
+    /// so a General's two and a Warrior alliance's one are already in them.
+    /// Not necessarily the levels the request asked for; see
+    /// [`Technology::effective_levels`].
     pub technology: Technology,
 
     /// Alliance name (optional)

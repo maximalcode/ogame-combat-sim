@@ -18,6 +18,8 @@ The engine implements OGame's combat resolution as it actually behaves:
 - **Rapid fire** — the full cross-table, including chained re-rolls
 - **Shield bounce** — shots under 1% of shield strength are absorbed entirely
 - **Explosions** — hull-integrity roll after each round
+- **Player and alliance classes** — a General fights two effective technology
+  levels above his research, a Warrior alliance one, and the two stack
 - **Debris fields** — with configurable metal/crystal recovery, moon chance and
   the recycler count needed to collect
 - **Loot** — plunder at 50/75/100%, capped by surviving cargo capacity
@@ -37,16 +39,20 @@ modifiers:
 | Missing | Since | Effect |
 | --- | --- | --- |
 | Lifeform research bonuses | v9 (2022) | Per-ship-type bonus to hull, shield and firepower. The largest gap by far. |
-| Player class bonuses | v7 | General grants +2 effective Weapons/Shielding/Armour levels |
-| Alliance class bonuses | v8 (2021) | Warrior grants +1 effective level to all three |
 | Deuterium in debris | v9.2 (2023) | A per-universe option; only metal and crystal are produced here |
 | v13 instant-calc rule | v13 (2026) | Battles short-circuit above a 10,000× attack-power ratio |
 
-In practice: for a battle with no lifeforms and no classes, results should be
-sound. For a developed 2026 account they will be optimistic or pessimistic
-depending on who holds the bonuses, because the engine currently sees none of
-them. All five are tracked in the issues, and the fix is one additive term per
-stat rather than anything structural.
+One thing outside combat itself is missing too, and it changes what an attack
+costs: destroyed defences are never rebuilt here, where the game gives each one
+a 70% chance of coming back free — 85% with an Engineer. Defence losses in this
+simulator are therefore the worst case for the defender. The Engineer flag a
+request can carry is read by nothing for that reason.
+
+In practice: for a battle without lifeforms, results should be sound, classes
+included. For a developed 2026 account they will be optimistic or pessimistic
+depending on who holds the lifeform research, because the engine does not see
+it. All of this is tracked in the issues, and the combat-stat fixes are one
+additive term per stat rather than anything structural.
 
 Stating this plainly matters more than the gaps do — every simulator in this
 space advertises accuracy and none of them publish what they get wrong.
@@ -73,6 +79,10 @@ accepts:
 ```bash
 cargo run -p combat-cli -- sim --file battle.json
 ```
+
+A file is also the only way to give either side a class: the shorthand has no
+flag for it, and `attacker_bonuses` / `defender_bonuses` in the JSON take a
+`player_class` of `general` and an `alliance_class` of `warrior`.
 
 Useful flags: `-n` for the number of simulations (uncapped — it is your CPU),
 `--rounds` for the round-by-round breakdown of one battle, `--planet

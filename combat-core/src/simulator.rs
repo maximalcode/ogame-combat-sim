@@ -185,12 +185,25 @@ impl Simulator {
     pub fn simulate_multiple(&self, request: &CombatRequest) -> CombatResults {
         let start = std::time::Instant::now();
 
+        // Player and alliance classes are effective technology levels, so each
+        // side's bonuses are folded into its technology once, here, before any
+        // of it reaches combat. Everything downstream — downscaling, the round
+        // loop, the stat cache — goes on seeing a plain `PartyData` and never
+        // learns that classes exist. Per side, because the request carries one
+        // bonus block per side and they are free to differ.
+        let attacker = request
+            .attacker
+            .with_bonuses(request.attacker_bonuses.as_ref());
+        let defender = request
+            .defender
+            .with_bonuses(request.defender_bonuses.as_ref());
+
         // Check if we should downscale for large battles
         let downscale_factor = match request.enable_downscaling {
             Some(false) => 1, // Force disable downscaling
             // Explicit opt-in and the default behave identically: the factor
             // calculation already returns 1 when the fleets are small enough.
-            Some(true) | None => calculate_downscale_factor(&request.attacker, &request.defender),
+            Some(true) | None => calculate_downscale_factor(&attacker, &defender),
         };
 
         let (attacker_data, defender_data) = if downscale_factor > 1
@@ -199,12 +212,12 @@ impl Simulator {
         {
             // Downscale fleets for massive performance gain
             (
-                downscale_party(&request.attacker, downscale_factor),
-                downscale_party(&request.defender, downscale_factor),
+                downscale_party(&attacker, downscale_factor),
+                downscale_party(&defender, downscale_factor),
             )
         } else {
             // Use original fleets
-            (request.attacker.clone(), request.defender.clone())
+            (attacker.clone(), defender.clone())
         };
         let used_downscaling_non_slot = downscale_factor > 1
             && request.attacker_slots.is_none()
@@ -233,14 +246,25 @@ impl Simulator {
         ) = if let (Some(a_slots), Some(d_slots)) =
             (&request.attacker_slots, &request.defender_slots)
         {
-            // Build original vectors for simulation
+            // Build original vectors for simulation. A side's bonuses belong to
+            // the player, so every slot on that side fights under them.
             let a_orig: Vec<(String, combat_types::PartyData)> = a_slots
                 .iter()
-                .map(|s| (s.id.clone(), s.data.clone()))
+                .map(|s| {
+                    (
+                        s.id.clone(),
+                        s.data.with_bonuses(request.attacker_bonuses.as_ref()),
+                    )
+                })
                 .collect();
             let d_orig: Vec<(String, combat_types::PartyData)> = d_slots
                 .iter()
-                .map(|s| (s.id.clone(), s.data.clone()))
+                .map(|s| {
+                    (
+                        s.id.clone(),
+                        s.data.with_bonuses(request.defender_bonuses.as_ref()),
+                    )
+                })
                 .collect();
 
             // Original per-slot totals for precision restoration
@@ -255,23 +279,25 @@ impl Simulator {
                 d_map.insert(s.id.clone(), s.data.entities.clone());
             }
 
-            // Downscaled vectors if needed
+            // Downscaled vectors if needed, taken from the slots above so the
+            // scaled battle is fought at the same effective levels as the
+            // unscaled one.
             let (a_scaled, d_scaled) = if downscale_factor > 1 {
-                let a_s: Vec<(String, combat_types::PartyData)> = a_slots
+                let a_s: Vec<(String, combat_types::PartyData)> = a_orig
                     .iter()
-                    .map(|s| {
+                    .map(|(id, data)| {
                         (
-                            s.id.clone(),
-                            crate::scaling::downscale_party(&s.data, downscale_factor),
+                            id.clone(),
+                            crate::scaling::downscale_party(data, downscale_factor),
                         )
                     })
                     .collect();
-                let d_s: Vec<(String, combat_types::PartyData)> = d_slots
+                let d_s: Vec<(String, combat_types::PartyData)> = d_orig
                     .iter()
-                    .map(|s| {
+                    .map(|(id, data)| {
                         (
-                            s.id.clone(),
-                            crate::scaling::downscale_party(&s.data, downscale_factor),
+                            id.clone(),
+                            crate::scaling::downscale_party(data, downscale_factor),
                         )
                     })
                     .collect();

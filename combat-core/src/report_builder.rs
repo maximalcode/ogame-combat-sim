@@ -49,11 +49,18 @@ impl ReportBuilder {
         });
 
         // Create participant info (using placeholder data - you can customize)
+        // The levels reported are the ones each side fought at, classes
+        // included: a report that showed the researched levels would disagree
+        // with the battle it is describing, and a General's two levels would
+        // look like they had been ignored.
         let attacker = Participant {
             name: "Attacker".to_string(),
             player_id: None,
             coordinates: None,
-            technology: request.attacker.technology,
+            technology: request
+                .attacker
+                .technology
+                .effective_levels(request.attacker_bonuses.as_ref()),
             alliance: None,
         };
 
@@ -61,7 +68,10 @@ impl ReportBuilder {
             name: "Defender".to_string(),
             player_id: None,
             coordinates: None,
-            technology: request.defender.technology,
+            technology: request
+                .defender
+                .technology
+                .effective_levels(request.defender_bonuses.as_ref()),
             alliance: None,
         };
 

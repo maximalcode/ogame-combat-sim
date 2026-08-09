@@ -129,6 +129,13 @@ pub enum AllianceClass {
     Researcher,
 }
 
+/// Effective combat-technology levels a General is worth: +2 to Weapons,
+/// Shielding *and* Armour, unchanged since player classes arrived in v7.
+const GENERAL_COMBAT_LEVELS: u8 = 2;
+
+/// The Warrior alliance class, +1 to the same three, from v8 (June 2021).
+const WARRIOR_COMBAT_LEVELS: u8 = 1;
+
 /// Player bonuses from classes, officers, and lifeforms
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PlayerBonuses {
@@ -136,10 +143,79 @@ pub struct PlayerBonuses {
     pub player_class: PlayerClass,
     #[serde(default)]
     pub alliance_class: AllianceClass,
+    /// The Engineer officer, and **read by nothing**. Its combat effect is on
+    /// the rebuild roll after a battle — 70% of destroyed defences come back
+    /// free, 85% with an Engineer — and this engine has no rebuild step for it
+    /// to modify: a destroyed defence is simply a loss. Wiring it up means
+    /// modelling rebuilding first, so the flag round-trips and waits rather
+    /// than being turned into a stat bonus it is not.
     #[serde(default)]
     pub has_engineer: bool,
+    /// Lifeform research, as a percentage, and **read by nothing**. Lifeform
+    /// bonuses are per-ship-type and add to the base stat, so they are not
+    /// effective levels and cannot travel through
+    /// [`Technology::effective_levels`] — a separate mechanism with its own
+    /// issue. Kept so requests that carry it still round-trip.
     #[serde(default)]
     pub lifeform_bonus: u8, // percentage
+}
+
+impl PlayerBonuses {
+    /// Levels these bonuses add to **each** of Weapons, Shielding and Armour.
+    ///
+    /// Player and alliance classes feed one pipeline in the live game —
+    /// v13.0.0-beta49 was a fix for their stat bonuses being calculated apart
+    /// from each other — so they add, and a General in a Warrior alliance
+    /// fights three levels above his research. Three is the ceiling: nothing
+    /// else in the game grants combat levels.
+    ///
+    /// The matches are exhaustive rather than `_ => 0`, so a class added later
+    /// has to be classified here instead of silently defaulting to harmless.
+    #[must_use]
+    pub fn combat_technology_levels(&self) -> u8 {
+        // Collector and Discoverer have no combat-stat effect at all;
+        // Discoverer's bonus is loot from inactives, which is not a stat.
+        let from_player_class = match self.player_class {
+            PlayerClass::General => GENERAL_COMBAT_LEVELS,
+            PlayerClass::None | PlayerClass::Collector | PlayerClass::Discoverer => 0,
+        };
+        // Trader and Researcher change trade and research, not battles.
+        let from_alliance_class = match self.alliance_class {
+            AllianceClass::Warrior => WARRIOR_COMBAT_LEVELS,
+            AllianceClass::None | AllianceClass::Trader | AllianceClass::Researcher => 0,
+        };
+
+        from_player_class + from_alliance_class
+    }
+}
+
+impl Technology {
+    /// The levels this player actually fights at, once classes are counted.
+    ///
+    /// Class bonuses are *levels*, not a multiplier applied after the fact: a
+    /// General with Weapons 10 fights as Weapons 12, and the `+10%` per level
+    /// is applied once, to the total. Every source adds at this stage, so
+    /// resolving them here is what keeps the engine unaware that classes
+    /// exist — everything downstream sees a `Technology` and cannot tell which
+    /// of its levels were researched.
+    ///
+    /// `None` is the identity, which is what makes a request that names no
+    /// bonuses resolve exactly as it did before any of this was read.
+    ///
+    /// Saturating, so a level-255 party gains nothing rather than wrapping
+    /// round to nothing. The drive technologies come through untouched: no
+    /// class changes them and no combat code reads them.
+    #[must_use]
+    pub fn effective_levels(self, bonuses: Option<&PlayerBonuses>) -> Self {
+        let extra = bonuses.map_or(0, PlayerBonuses::combat_technology_levels);
+
+        Self {
+            weapon: self.weapon.saturating_add(extra),
+            shield: self.shield.saturating_add(extra),
+            armour: self.armour.saturating_add(extra),
+            ..self
+        }
+    }
 }
 
 /// Fleet composition: entity type -> count
@@ -150,6 +226,22 @@ pub type FleetComposition = HashMap<EntityType, u32>;
 pub struct PartyData {
     pub technology: Technology,
     pub entities: FleetComposition,
+}
+
+impl PartyData {
+    /// This party fighting at its
+    /// [effective levels](Technology::effective_levels).
+    ///
+    /// The fleet comes through untouched — classes modify stats, never ship
+    /// counts. This is the call the simulator makes once per side, which is
+    /// how the attacker's class stays off the defender's ships.
+    #[must_use]
+    pub fn with_bonuses(&self, bonuses: Option<&PlayerBonuses>) -> Self {
+        Self {
+            technology: self.technology.effective_levels(bonuses),
+            entities: self.entities.clone(),
+        }
+    }
 }
 
 /// Result summary for an individual slot (attacker or defender)
@@ -437,5 +529,129 @@ mod tests {
         let party = PartyData::default();
         assert!(party.entities.is_empty());
         assert_eq!(party.technology, Technology::default());
+    }
+
+    /// Ten researched levels and a class worth two of them, expressed the way
+    /// the rest of the code sees it.
+    fn researched(level: u8) -> Technology {
+        Technology {
+            weapon: level,
+            shield: level,
+            armour: level,
+            ..Default::default()
+        }
+    }
+
+    fn classes(player_class: PlayerClass, alliance_class: AllianceClass) -> PlayerBonuses {
+        PlayerBonuses {
+            player_class,
+            alliance_class,
+            ..Default::default()
+        }
+    }
+
+    /// The whole point of the word "effective": a General does not multiply
+    /// anything, he adds two levels to each of the three combat technologies,
+    /// and the `+10%` per level is then applied once to the total.
+    #[test]
+    fn a_general_is_worth_two_levels_of_each_combat_technology() {
+        let bonuses = classes(PlayerClass::General, AllianceClass::None);
+
+        assert_eq!(
+            researched(10).effective_levels(Some(&bonuses)),
+            researched(12)
+        );
+    }
+
+    /// The alliance half of the same pipeline, added in v8.
+    #[test]
+    fn a_warrior_alliance_is_worth_one_level() {
+        let bonuses = classes(PlayerClass::None, AllianceClass::Warrior);
+
+        assert_eq!(
+            researched(10).effective_levels(Some(&bonuses)),
+            researched(11)
+        );
+    }
+
+    /// Player and alliance classes feed one pipeline in the live game, so they
+    /// add rather than override, and +3 is the ceiling — nothing else in the
+    /// game grants combat levels.
+    #[test]
+    fn a_general_in_a_warrior_alliance_stacks_to_three_levels() {
+        let bonuses = classes(PlayerClass::General, AllianceClass::Warrior);
+
+        assert_eq!(bonuses.combat_technology_levels(), 3);
+        assert_eq!(
+            researched(10).effective_levels(Some(&bonuses)),
+            researched(13)
+        );
+    }
+
+    /// Every other class exists and does something, but none of it is a combat
+    /// stat: Discoverer takes more loot from inactives, Trader and Researcher
+    /// change trade and research. A simulator that quietly gave them levels
+    /// would be wrong in a way nobody would notice.
+    #[test]
+    fn the_other_classes_grant_no_combat_levels() {
+        for player_class in [
+            PlayerClass::None,
+            PlayerClass::Collector,
+            PlayerClass::Discoverer,
+        ] {
+            for alliance_class in [
+                AllianceClass::None,
+                AllianceClass::Trader,
+                AllianceClass::Researcher,
+            ] {
+                let bonuses = classes(player_class, alliance_class);
+                assert_eq!(
+                    bonuses.combat_technology_levels(),
+                    0,
+                    "{player_class:?} + {alliance_class:?}"
+                );
+            }
+        }
+    }
+
+    /// A request that names no bonuses must resolve exactly as it did before
+    /// any of this was read, so `None` has to be the identity — not "the
+    /// default class", which would be the same thing today but is a different
+    /// claim.
+    #[test]
+    fn no_bonuses_leave_the_levels_alone() {
+        let tech = researched(10);
+
+        assert_eq!(tech.effective_levels(None), tech);
+    }
+
+    /// Levels are `u8`, and a caller is free to send 255. Saturating rather
+    /// than wrapping: an absurd level should stay absurd, not become zero.
+    #[test]
+    fn a_level_at_the_top_of_the_range_cannot_wrap_around() {
+        let bonuses = classes(PlayerClass::General, AllianceClass::Warrior);
+
+        assert_eq!(researched(255).effective_levels(Some(&bonuses)), {
+            let mut expected = researched(255);
+            expected.weapon = u8::MAX;
+            expected.shield = u8::MAX;
+            expected.armour = u8::MAX;
+            expected
+        });
+    }
+
+    /// Classes change stats, never fleets. Worth pinning because
+    /// `with_bonuses` is the call the simulator makes on every battle.
+    #[test]
+    fn applying_bonuses_to_a_party_leaves_its_fleet_alone() {
+        let party = PartyData {
+            technology: researched(10),
+            entities: HashMap::from([(204, 100)]),
+        };
+
+        let boosted = party.with_bonuses(Some(&classes(PlayerClass::General, AllianceClass::None)));
+
+        assert_eq!(boosted.entities, party.entities);
+        assert_eq!(boosted.technology, researched(12));
     }
 }

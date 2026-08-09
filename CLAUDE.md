@@ -15,10 +15,11 @@ stale but the code mostly is not: combat resolution — rounds, rapid fire, the
 bounce rule, shield regen, the explosion roll, `+10%`-per-level tech scaling,
 the whole ship stat table — is unchanged from v7 through the current v13. What
 is genuinely missing is every post-v7 system that feeds *stat modifiers* in:
-lifeform research (v9), alliance classes (v8), player classes (v7 — the types
-exist but the engine never reads them), deuterium debris (v9.2) and v13's
-instant-calc short-circuit. All tracked in the issues. Do not reintroduce a
-version number into the docs; state what is modelled instead.
+lifeform research (v9), deuterium debris (v9.2) and v13's instant-calc
+short-circuit. All tracked in the issues. Player classes (v7) and alliance
+classes (v8) used to be on that list and are modelled now — see
+`Technology::effective_levels`. Do not reintroduce a version number into the
+docs; state what is modelled instead.
 
 This repository was started fresh in August 2026. Its predecessor began life as
 the combat engine for a private OGame-clone game, and roughly three quarters of
@@ -96,9 +97,24 @@ cargo fmt --check \
   not a micro-optimisation: `downscaling_accuracy` simulates 20M ships without
   downscaling to prove the approximation holds, and it takes 135s at
   `opt-level = 0` versus 9.5s at 3. Do not remove that profile section.
-- **Three request fields are inert.** `universe_settings`, `attacker_bonuses`
-  and `defender_bonuses` round-trip through JSON but no engine code reads them.
-  Tracked in the issues.
+- **`universe_settings` is inert**, and so are two fields inside
+  `PlayerBonuses`. The settings block round-trips through JSON and no engine
+  code reads it. `has_engineer` and `lifeform_bonus` do the same, deliberately:
+  the Engineer's combat effect is on the post-battle defence *rebuild* roll and
+  this engine has no rebuild step to attach it to, and lifeform bonuses are
+  per-ship-type additions to a base stat rather than levels, so they cannot go
+  through the effective-levels seam. Both are tracked in the issues; neither is
+  an oversight to be fixed by inventing a number.
+- **Class bonuses are levels, resolved before combat starts.** A General is
+  worth +2 Weapons/Shielding/Armour and a Warrior alliance +1, they add, and +3
+  is the ceiling. `Technology::effective_levels` folds a side's
+  `PlayerBonuses` into its `Technology`, and `Simulator::simulate_multiple`
+  calls it once per side — so the engine, the stat cache and downscaling all go
+  on seeing a plain `PartyData` and cannot tell a researched level from a
+  granted one. That is the whole design: **do not** add a class multiplier
+  inside `ModifiedStats::calculate`, because `+10%` per level is applied once
+  to the total, and a General with Weapons 10 must compute as Weapons 12 rather
+  than as Weapons 10 times something.
 - **`/api/simulate` overrides the request.** It caps `simulations` at
   `MAX_SIMULATIONS` (default 1000) and forces `enable_downscaling = None`.
   Both are HTTP-layer server protection; the library has no limits. **The CLI
