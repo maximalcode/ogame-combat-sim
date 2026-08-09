@@ -259,6 +259,7 @@ pub fn upscale_result_with_originals(
     let debris_field = combat_types::DebrisField {
         metal: result.debris_field.metal * factor as u64,
         crystal: result.debris_field.crystal * factor as u64,
+        deuterium: result.debris_field.deuterium * factor as u64,
     };
 
     // Scale up loot proportionally
@@ -298,6 +299,7 @@ pub fn upscale_result(result: &SimulationResult, factor: usize) -> SimulationRes
     let debris_field = combat_types::DebrisField {
         metal: result.debris_field.metal * factor as u64,
         crystal: result.debris_field.crystal * factor as u64,
+        deuterium: result.debris_field.deuterium * factor as u64,
     };
 
     // Scale up loot proportionally
@@ -450,6 +452,7 @@ mod tests {
             debris_field: combat_types::DebrisField {
                 metal: 1000,
                 crystal: 500,
+                deuterium: 250,
             },
             loot: combat_types::PlanetResources {
                 metal: 2000,
@@ -474,6 +477,9 @@ mod tests {
         // Verify economic fields scale correctly
         assert_eq!(upscaled.debris_field.metal, 10000);
         assert_eq!(upscaled.debris_field.crystal, 5000);
+        // Deuterium debris scales with the rest of the field, or a downscaled
+        // run in a deuterium universe would under-report it tenfold.
+        assert_eq!(upscaled.debris_field.deuterium, 2500);
         assert_eq!(upscaled.loot.metal, 20000);
         assert_eq!(upscaled.loot.crystal, 10000);
         assert_eq!(upscaled.loot.deuterium, 5000);

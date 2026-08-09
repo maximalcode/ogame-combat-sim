@@ -16,9 +16,10 @@ bounce rule, shield regen, the explosion roll, `+10%`-per-level tech scaling,
 the whole ship stat table — is unchanged from v7 through the current v13. What
 is genuinely missing is every post-v7 system that feeds *stat modifiers* in:
 lifeform research (v9), alliance classes (v8), player classes (v7 — the types
-exist but the engine never reads them), deuterium debris (v9.2) and v13's
-instant-calc short-circuit. All tracked in the issues. Do not reintroduce a
-version number into the docs; state what is modelled instead.
+exist but the engine never reads them) and v13's instant-calc short-circuit.
+Per-universe debris rules, deuterium debris (v9.2) included, are modelled — see
+`CombatRequest::debris_settings`. All the rest is tracked in the issues. Do not
+reintroduce a version number into the docs; state what is modelled instead.
 
 This repository was started fresh in August 2026. Its predecessor began life as
 the combat engine for a private OGame-clone game, and roughly three quarters of
@@ -96,9 +97,21 @@ cargo fmt --check \
   not a micro-optimisation: `downscaling_accuracy` simulates 20M ships without
   downscaling to prove the approximation holds, and it takes 135s at
   `opt-level = 0` versus 9.5s at 3. Do not remove that profile section.
-- **Three request fields are inert.** `universe_settings`, `attacker_bonuses`
-  and `defender_bonuses` round-trip through JSON but no engine code reads them.
-  Tracked in the issues.
+- **`attacker_bonuses` and `defender_bonuses` are inert.** They round-trip
+  through JSON but no engine code reads them. Tracked in the issues.
+  `universe_settings` used to be the third: its debris half is now read, but
+  `galaxies`, `systems`, the two donut flags, `fleet_speed` and
+  `deuterium_save_factor` are still inert because nothing in this engine
+  computes flight or fuel yet — that is issue #14.
+- **Debris rules come from two places and one wins.** A request can set
+  `debris_percentage` at the top level *and* describe debris inside
+  `universe_settings`. `CombatRequest::debris_settings` settles it:
+  **`universe_settings` wins whenever it is present**, and the top-level field
+  is the fallback for requests without one. The fallback reports fleet debris
+  only — no defence debris, no deuterium — which is exactly what the engine did
+  before any of this was read, so a request with `universe_settings: null`
+  produces the wreck field it always did. Two tests in `combat-types/src/lib.rs`
+  pin both halves of the rule; do not "simplify" it to one source.
 - **`/api/simulate` overrides the request.** It caps `simulations` at
   `MAX_SIMULATIONS` (default 1000) and forces `enable_downscaling = None`.
   Both are HTTP-layer server protection; the library has no limits. **The CLI
