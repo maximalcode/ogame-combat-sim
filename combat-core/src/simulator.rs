@@ -5,7 +5,7 @@ use crate::scaling::{
     upscale_round_compositions, upscale_round_compositions_by_slot, upscale_round_details,
     upscale_slot_results,
 };
-use combat_types::entities::load_entity_stats;
+use combat_types::entities::entity_stats;
 use combat_types::{CombatRequest, CombatResults, PartyData, PlanetResources, SimulationResult};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -55,17 +55,17 @@ impl Simulator {
         );
 
         // Derive aggregated economic data
-        let entity_db = load_entity_stats();
+        let entity_db = entity_stats();
         let debris_field = economics::calculate_debris(
             &single.attacker_losses,
             &single.defender_losses,
-            &entity_db,
+            entity_db,
             debris_percentage,
         );
 
         let loot = if let Some(resources) = planet_resources {
             let cargo_capacity =
-                economics::calculate_cargo_capacity(&single.attacker_remaining, &entity_db);
+                economics::calculate_cargo_capacity(&single.attacker_remaining, entity_db);
             economics::calculate_loot(resources, cargo_capacity)
         } else {
             PlanetResources::default()
@@ -75,13 +75,10 @@ impl Simulator {
             &debris_field,
             &loot,
             &single.attacker_losses,
-            &entity_db,
+            entity_db,
         );
-        let defender_profit = economics::calculate_defender_profit(
-            &debris_field,
-            &single.defender_losses,
-            &entity_db,
-        );
+        let defender_profit =
+            economics::calculate_defender_profit(&debris_field, &single.defender_losses, entity_db);
 
         SimulationResult {
             outcome: match single.outcome {
@@ -127,20 +124,20 @@ impl Simulator {
         );
 
         // Load entity database for economic calculations
-        let entity_db = load_entity_stats();
+        let entity_db = entity_stats();
 
         // Calculate debris field
         let debris_field = economics::calculate_debris(
             &result.attacker_losses,
             &result.defender_losses,
-            &entity_db,
+            entity_db,
             debris_percentage,
         );
 
         // Calculate loot if planet resources are provided
         let loot = if let Some(resources) = planet_resources {
             let cargo_capacity =
-                economics::calculate_cargo_capacity(&result.attacker_remaining, &entity_db);
+                economics::calculate_cargo_capacity(&result.attacker_remaining, entity_db);
             economics::calculate_loot(resources, cargo_capacity)
         } else {
             PlanetResources::default()
@@ -151,14 +148,11 @@ impl Simulator {
             &debris_field,
             &loot,
             &result.attacker_losses,
-            &entity_db,
+            entity_db,
         );
 
-        let defender_profit = economics::calculate_defender_profit(
-            &debris_field,
-            &result.defender_losses,
-            &entity_db,
-        );
+        let defender_profit =
+            economics::calculate_defender_profit(&debris_field, &result.defender_losses, entity_db);
 
         SimulationResult {
             outcome: match result.outcome {

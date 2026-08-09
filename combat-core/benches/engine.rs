@@ -3,9 +3,11 @@
 //! Four measurements, chosen to span the engine's operating range rather than
 //! to produce a flattering headline number:
 //!
-//! - `entity_stats/load` — `load_entity_stats()` alone. It is called once per
-//!   simulation today, so knowing what it costs on its own is the prerequisite
-//!   for deciding whether that matters.
+//! - `entity_stats/load` — `load_entity_stats()` alone. Since the table became
+//!   a `LazyLock` static this measures cloning it, not building it, and the
+//!   simulation path no longer calls it at all — it borrows via
+//!   `entity_stats()`. Kept because the owned form is still public API and
+//!   several tests pay for it.
 //! - `battle/small` — one ship type per side. Round overhead with almost no
 //!   fleet to iterate.
 //! - `battle/medium` — 100 v 1000, rapid fire on. The shape of an ordinary
@@ -90,8 +92,8 @@ fn bench_entity_stats(c: &mut Criterion) {
 }
 
 fn bench_battles(c: &mut Criterion) {
-    // One global rayon pool, installed once. Building this inside the timed
-    // region would measure `load_entity_stats()` again instead of combat.
+    // One global rayon pool, installed once. Constructing it inside the timed
+    // region would measure pool setup instead of combat.
     let simulator = Simulator::new();
 
     let mut group = c.benchmark_group("battle");

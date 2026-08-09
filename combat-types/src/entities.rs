@@ -16,10 +16,34 @@
 
 use crate::{EntityStats, EntityType};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
-/// Load entity stats database (base stats with economic data)
+/// The table, built once per process.
+///
+/// It is constant data, and it was previously rebuilt on every simulation —
+/// roughly 27 `HashMap` inserts, each carrying two more `HashMap`s for the
+/// rapid-fire rows, inside the hot loop.
+static ENTITY_STATS: LazyLock<HashMap<EntityType, EntityStats>> = LazyLock::new(build_entity_stats);
+
+/// Borrow the shared entity stats database.
+///
+/// Prefer this everywhere. [`load_entity_stats`] exists for the callers that
+/// genuinely need an owned, mutable copy, and it pays for one.
+#[must_use]
+pub fn entity_stats() -> &'static HashMap<EntityType, EntityStats> {
+    &ENTITY_STATS
+}
+
+/// Load an owned copy of the entity stats database.
+///
+/// A clone of the shared table. Use [`entity_stats`] unless you need to mutate
+/// the result — several tests build a doctored table this way.
 #[must_use]
 pub fn load_entity_stats() -> HashMap<EntityType, EntityStats> {
+    ENTITY_STATS.clone()
+}
+
+fn build_entity_stats() -> HashMap<EntityType, EntityStats> {
     let mut stats = HashMap::new();
 
     // Ships
