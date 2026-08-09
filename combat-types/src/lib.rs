@@ -1,5 +1,6 @@
 pub mod combat_report;
 pub mod entities;
+pub mod names;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -177,7 +178,7 @@ pub struct PartySlot {
 }
 
 /// Planet resources (for loot calculation)
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct PlanetResources {
     pub metal: u64,
     pub crystal: u64,

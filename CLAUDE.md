@@ -7,7 +7,8 @@ needs fixing.
 ## What this is
 
 An OGame fleet-combat simulator. `combat-core` is the engine, `combat-types`
-the shared data model, `combat-api` a small stateless axum server.
+the shared data model, `combat-api` a small stateless axum server, `combat-cli`
+a clap binary over the same library.
 
 **On versions.** The old repo called this "OGame v7" everywhere. That label was
 stale but the code mostly is not: combat resolution — rounds, rapid fire, the
@@ -31,7 +32,8 @@ itself was carried over intact — it was never contaminated.
 | Path | Contents |
 | --- | --- |
 | `combat-types/src/lib.rs` | `CombatRequest`, `PartyData`, `Technology`, `CombatResults`, `SimulationResult` |
-| `combat-types/src/entities.rs` | `load_entity_stats()` — the full ship and defence stat table |
+| `combat-types/src/entities.rs` | `entity_stats()` / `load_entity_stats()` — the full ship and defence stat table |
+| `combat-types/src/names.rs` | `ENTITY_INFO`, `resolve()`, `name_of()` — names and aliases, hand-written, kept in sync by test |
 | `combat-types/src/combat_report.rs` | `CombatReport`, debris, moon chance, recycler maths |
 | `combat-core/src/combat.rs` | One battle: rounds, shots, rapid fire, explosions. `MAX_ROUNDS = 6` |
 | `combat-core/src/simulator.rs` | `Simulator::simulate_multiple` — runs N battles in parallel via rayon |
@@ -39,6 +41,9 @@ itself was carried over intact — it was never contaminated.
 | `combat-core/src/economics.rs` | Debris, loot, plunder |
 | `combat-core/src/report_builder.rs` | `ReportBuilder::build_summary_report` |
 | `combat-api/src/main.rs` | The whole server: two routes, no state |
+| `combat-cli/src/cli.rs` | clap definitions, `build_request`, `parse_request_json`, `validate` |
+| `combat-cli/src/args.rs` | `parse_fleet` / `parse_tech` / `parse_resources` — the shorthand parsers |
+| `combat-cli/src/render.rs` | Human-readable output. Returns `String`, never prints |
 
 ## Running a simulation
 
@@ -61,6 +66,8 @@ second call silently does nothing, but it is process-wide state.
 ```bash
 cargo test --workspace            # ~25s including compile
 cargo run -p combat-api           # server on :3000
+cargo run -p combat-cli -- sim -a "cruiser:100" -d "lf:1000" --tech 10
+cargo run -p combat-cli -- entities
 cargo bench --bench engine        # criterion; first compile is slow, see below
 ```
 
@@ -94,7 +101,20 @@ cargo fmt --check \
   Tracked in the issues.
 - **`/api/simulate` overrides the request.** It caps `simulations` at
   `MAX_SIMULATIONS` (default 1000) and forces `enable_downscaling = None`.
-  Both are HTTP-layer server protection; the library has no limits.
+  Both are HTTP-layer server protection; the library has no limits. **The CLI
+  deliberately does not copy either one** — a local binary spending its own CPU
+  has no shared resource to protect, and `simulations_are_not_capped_at_the_api_limit`
+  in `combat-cli/src/cli.rs` is there to stop someone "fixing" the discrepancy.
+- **clap renders `///` into `--help`.** A doc comment on a field in
+  `combat-cli/src/cli.rs` is user-facing text, not a note to the next reader.
+  Internal rationale goes in a `//` comment above it.
+- **The entity name table is hand-written.** `EntityStats` has no name field, so
+  `combat-types/src/names.rs` carries names and aliases separately. Two tests
+  assert the two tables cover exactly the same ids in both directions; add a
+  ship to one and the other fails.
+- **`build_summary_report` hardcodes `round_details: None`.** It averages a run,
+  and an average has no per-round narrative. `combat-cli --rounds` therefore
+  reads `results.results[0]` — one battle — and its header says so.
 - **Edition 2024 reserves `gen`.** That is why this uses rand 0.9
   (`random`, `random_range`, `from_os_rng`) rather than rand 0.8's `gen`.
 - **The clippy config has two halves.** Everything above the

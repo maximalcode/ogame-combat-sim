@@ -4,6 +4,7 @@ members = [
     "combat-core",
     "combat-types",
     "combat-api",
+    "combat-cli",
 ]
 
 [workspace.package]
@@ -19,12 +20,29 @@ description = "A fast OGame fleet combat simulator"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# serde reports "invalid type: string, expected u32 at line 1 column 114" and
+# leaves you counting columns. This wraps the deserializer to report the field
+# path as well — the difference between a usable CLI error and a puzzle.
+serde_path_to_error = "0.1"
+
 # small_rng gives SmallRng, which is ~3x faster than the default and is fine
 # here — nothing about a battle simulation needs cryptographic randomness.
 rand = { version = "0.9", features = ["small_rng"] }
 
 rayon = "1.10"
 num_cpus = "1.16"
+
+# derive only. The default feature set drags in colour and suggestion support
+# that a two-subcommand binary does not need, and combat-types deliberately
+# depends on nothing but serde — keeping the CLI's tree small is the same
+# instinct one crate down.
+clap = { version = "4.5", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+] }
 
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }

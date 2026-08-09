@@ -53,7 +53,33 @@ space advertises accuracy and none of them publish what they get wrong.
 
 ## Quick start
 
-Run the server:
+100 cruisers against 1000 light fighters and 200 rocket launchers, a thousand
+times:
+
+```bash
+cargo run -p combat-cli -- sim \
+  -a "cruiser:100" \
+  -d "lf:1000,rocketlauncher:200" \
+  --tech 10 -n 1000
+```
+
+Ships can be named, abbreviated or given by ID — `cruiser`, `cr` and `206` are
+the same ship, and matching ignores case and punctuation. `combat-cli entities`
+prints the whole table with every alias.
+
+A battle can also come from a file, using exactly the JSON the HTTP endpoint
+accepts:
+
+```bash
+cargo run -p combat-cli -- sim --file battle.json
+```
+
+Useful flags: `-n` for the number of simulations (uncapped — it is your CPU),
+`--rounds` for the round-by-round breakdown of one battle, `--planet
+M,C,D` to give the defender something worth looting, and `--no-rapid-fire` to
+turn rapid fire off. `--help` lists the rest.
+
+## Running it as a server
 
 ```bash
 cargo run -p combat-api
@@ -117,7 +143,9 @@ cannot quietly stop working.
 
 ## Entity IDs
 
-Fleets are keyed by OGame's own entity IDs.
+Fleets are keyed by OGame's own entity IDs over JSON and in the library. The CLI
+also accepts names and aliases; `combat-cli entities` prints them alongside each
+unit's stats.
 
 | ID | Ship | ID | Ship | ID | Defence |
 | --- | --- | --- | --- | --- | --- |
@@ -138,8 +166,9 @@ Fleets are keyed by OGame's own entity IDs.
 | `combat-types` | The data model: requests, results, reports, ship and defence stats |
 | `combat-core` | The engine: rounds, rapid fire, explosions, debris, loot, downscaling |
 | `combat-api` | A small stateless HTTP server over the engine |
+| `combat-cli` | The command-line interface: `sim` and `entities` |
 
-A command-line interface and a web UI are planned but not yet here; see the
+A web UI is planned but not yet here; see the
 [open issues](https://github.com/maximalcode/ogame-combat-sim/issues) for what
 is actually in progress. This README describes only what exists today.
 
