@@ -4,6 +4,7 @@ members = [
     "combat-core",
     "combat-types",
     "combat-api",
+    "combat-cli",
 ]
 
 [workspace.package]
@@ -25,6 +26,18 @@ rand = { version = "0.9", features = ["small_rng"] }
 
 rayon = "1.10"
 num_cpus = "1.16"
+
+# derive only. The default feature set drags in colour and suggestion support
+# that a two-subcommand binary does not need, and combat-types deliberately
+# depends on nothing but serde — keeping the CLI's tree small is the same
+# instinct one crate down.
+clap = { version = "4.5", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+] }
 
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
