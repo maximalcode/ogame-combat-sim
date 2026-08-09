@@ -1,0 +1,56 @@
+name: quality
+
+# The only workflow in this repo. maxi-quality's Layer 2 (Semgrep, Gitleaks,
+# OSV-Scanner) runs beside the Rust job that used to live in ci.yml — one file,
+# so there is one answer to "is this commit green".
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# A superseded run tells you nothing you will act on, so cancel it rather than
+# leaving it to finish against a commit nobody is looking at any more.
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    uses: maximalcode/maxi-quality/.github/workflows/quality.yml@v1
+
+  # Rust Layer 1 (maxi-quality). Toolchain and cargo-deny are PINNED: with
+  # warnings promoted to errors, an analyzer upgrade that adds lints is a
+  # breaking change — bump both deliberately, never via a floating 'stable'.
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt
+          rustup default 1.97.1
+      - name: Pinned cargo-deny (checksum-verified)
+        run: |
+          curl -sSfL -o /tmp/cargo-deny.tgz \
+            https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz
+          echo '9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f  /tmp/cargo-deny.tgz' | sha256sum -c -
+          tar xzf /tmp/cargo-deny.tgz -C "$HOME/.cargo/bin" --strip-components=1 \
+            cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo fmt --check
+      # -Dwarnings HERE and not in the manifest: a contributor's local
+      # `cargo check` should warn, not wall them. CI is the gate.
+      - name: cargo clippy — all targets, warnings are errors
+        env:
+          RUSTFLAGS: -Dwarnings
+        run: cargo clippy --workspace --all-targets --locked
+      # licenses is in the list because deny.toml's allowlist is filled — see
+      # the [licenses] comment there for what each entry is carrying.
+      - run: cargo deny check advisories bans licenses
+      # Tests build at opt-level 3 (see [profile.test] in Cargo.toml). The
+      # engine is a Monte Carlo loop and runs ~14x slower unoptimised.
+      - run: cargo test --workspace --locked
