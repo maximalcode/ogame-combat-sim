@@ -5,70 +5,65 @@
 #![allow(clippy::implicit_hasher)]
 
 use combat_types::EntityStats;
-use combat_types::{DebrisField, EntityType, FleetComposition, PlanetResources};
+use combat_types::{DebrisField, DebrisSettings, EntityType, FleetComposition, PlanetResources};
 use std::collections::HashMap;
 
-/// Calculate debris field from losses
-/// Now supports separate debris percentages for fleet and defence
+/// Defences occupy ids `400..500`; everything below is a ship. The two leave
+/// debris at different rates, and in a standard universe defences leave none.
+const DEFENCE_IDS: std::ops::Range<EntityType> = 400..500;
+
+/// Calculate the debris field left by a battle's losses.
+///
+/// Ships and defences are counted at their own percentages, and deuterium only
+/// joins metal and crystal when the universe says so — all three come from
+/// [`DebrisSettings`], which [`combat_types::CombatRequest::debris_settings`]
+/// resolves. Only the defender's defences can contribute: an attacker cannot
+/// bring a rocket launcher along.
 #[must_use]
 pub fn calculate_debris(
     attacker_losses: &FleetComposition,
     defender_losses: &FleetComposition,
     entity_db: &HashMap<EntityType, EntityStats>,
-    debris_percentage: f32,
+    settings: DebrisSettings,
 ) -> DebrisField {
-    // Use default debris % for both fleet and defence (legacy behavior)
-    calculate_debris_extended(
-        attacker_losses,
-        defender_losses,
-        entity_db,
-        debris_percentage as u8,
-        0,
-    )
-}
+    let fleet_factor = f32::from(settings.fleet_percentage) / 100.0;
+    let defence_factor = f32::from(settings.defence_percentage) / 100.0;
 
-/// Calculate debris field with separate fleet and defence percentages
-#[must_use]
-pub fn calculate_debris_extended(
-    attacker_losses: &FleetComposition,
-    defender_losses: &FleetComposition,
-    entity_db: &HashMap<EntityType, EntityStats>,
-    debris_fleet_pct: u8,
-    debris_defence_pct: u8,
-) -> DebrisField {
-    let mut metal = 0u64;
-    let mut crystal = 0u64;
+    // The rate a wreck of this type leaves debris at, or `None` for one that
+    // leaves none: an id outside both ranges, or a defence on the attacking
+    // side, which cannot happen but is not this function's to assume.
+    let rate = |entity_type: EntityType, defending: bool| {
+        if entity_type < DEFENCE_IDS.start {
+            Some(fleet_factor)
+        } else if defending && DEFENCE_IDS.contains(&entity_type) {
+            Some(defence_factor)
+        } else {
+            None
+        }
+    };
 
-    let fleet_factor = f32::from(debris_fleet_pct) / 100.0;
-    let defence_factor = f32::from(debris_defence_pct) / 100.0;
+    let mut field = DebrisField::default();
 
-    // Calculate debris from attacker losses (always ships)
-    for (&entity_type, &count) in attacker_losses {
-        if let Some(stats) = entity_db.get(&entity_type) {
-            // Ships (< 400) go to debris at fleet rate
-            if entity_type < 400 {
-                metal += (stats.cost_metal as f32 * fleet_factor * count as f32) as u64;
-                crystal += (stats.cost_crystal as f32 * fleet_factor * count as f32) as u64;
+    for (losses, defending) in [(attacker_losses, false), (defender_losses, true)] {
+        for (&entity_type, &count) in losses {
+            let (Some(factor), Some(stats)) =
+                (rate(entity_type, defending), entity_db.get(&entity_type))
+            else {
+                // An unknown id contributes nothing, as it always has.
+                continue;
+            };
+
+            let share = |cost: u32| (cost as f32 * factor * count as f32) as u64;
+
+            field.metal += share(stats.cost_metal);
+            field.crystal += share(stats.cost_crystal);
+            if settings.deuterium {
+                field.deuterium += share(stats.cost_deuterium);
             }
         }
     }
 
-    // Calculate debris from defender losses
-    for (&entity_type, &count) in defender_losses {
-        if let Some(stats) = entity_db.get(&entity_type) {
-            if entity_type < 400 {
-                // Ships go to debris at fleet rate
-                metal += (stats.cost_metal as f32 * fleet_factor * count as f32) as u64;
-                crystal += (stats.cost_crystal as f32 * fleet_factor * count as f32) as u64;
-            } else if (400..500).contains(&entity_type) {
-                // Defense (400-499) goes to debris at defence rate
-                metal += (stats.cost_metal as f32 * defence_factor * count as f32) as u64;
-                crystal += (stats.cost_crystal as f32 * defence_factor * count as f32) as u64;
-            }
-        }
-    }
-
-    DebrisField { metal, crystal }
+    field
 }
 
 /// Calculate loot from planet resources
@@ -198,6 +193,15 @@ mod tests {
     use super::*;
     use combat_types::entities::load_entity_stats;
 
+    /// A standard universe: 30% of ships, no defence debris, no deuterium.
+    fn standard() -> DebrisSettings {
+        DebrisSettings {
+            fleet_percentage: 30,
+            defence_percentage: 0,
+            deuterium: false,
+        }
+    }
+
     #[test]
     fn test_calculate_debris() {
         let entity_db = load_entity_stats();
@@ -207,13 +211,99 @@ mod tests {
 
         let defender_losses = HashMap::new();
 
-        let debris = calculate_debris(&attacker_losses, &defender_losses, &entity_db, 30.0);
+        let debris = calculate_debris(&attacker_losses, &defender_losses, &entity_db, standard());
 
         // Light Fighter costs: 3000 metal, 1000 crystal
         // 100 fighters * 30% = 30 fighters worth
         // Expected: 90,000 metal, 30,000 crystal
         assert_eq!(debris.metal, 90000);
         assert_eq!(debris.crystal, 30000);
+    }
+
+    /// The point of the whole exercise: one percentage applied to both ships
+    /// and defences is wrong, and a universe that sets them apart must see them
+    /// apart.
+    #[test]
+    fn ships_and_defences_leave_debris_at_their_own_rates() {
+        let entity_db = load_entity_stats();
+
+        let mut defender_losses = HashMap::new();
+        defender_losses.insert(211, 10); // Bomber:      50000 / 25000 / 15000
+        defender_losses.insert(404, 10); // Gauss cannon: 20000 / 15000 /  2000
+
+        let debris = calculate_debris(
+            &HashMap::new(),
+            &defender_losses,
+            &entity_db,
+            DebrisSettings {
+                fleet_percentage: 50,
+                defence_percentage: 20,
+                deuterium: false,
+            },
+        );
+
+        // Ships at 50%:    10 * 50000 * 0.5 = 250_000 metal, 125_000 crystal
+        // Defences at 20%: 10 * 20000 * 0.2 =  40_000 metal,  30_000 crystal
+        assert_eq!(debris.metal, 290_000, "fleet and defence metal");
+        assert_eq!(debris.crystal, 155_000, "fleet and defence crystal");
+        assert_eq!(debris.deuterium, 0, "deuterium is off in this universe");
+    }
+
+    /// A single percentage would have produced the same figure for both halves;
+    /// this pins the fact that the defence half can be switched off entirely
+    /// while the fleet half keeps contributing.
+    #[test]
+    fn defences_leave_nothing_when_the_universe_says_zero() {
+        let entity_db = load_entity_stats();
+
+        let mut defender_losses = HashMap::new();
+        defender_losses.insert(404, 10); // 10 Gauss cannons
+
+        let debris = calculate_debris(&HashMap::new(), &defender_losses, &entity_db, standard());
+
+        assert_eq!(debris.total(), 0);
+    }
+
+    /// Deuterium in debris fields, the per-universe option added in v9.2.0.
+    #[test]
+    fn deuterium_joins_the_field_when_the_universe_allows_it() {
+        let entity_db = load_entity_stats();
+
+        let mut defender_losses = HashMap::new();
+        defender_losses.insert(211, 10); // Bomber:      15000 deuterium each
+        defender_losses.insert(404, 10); // Gauss cannon: 2000 deuterium each
+
+        let debris = calculate_debris(
+            &HashMap::new(),
+            &defender_losses,
+            &entity_db,
+            DebrisSettings {
+                fleet_percentage: 50,
+                defence_percentage: 20,
+                deuterium: true,
+            },
+        );
+
+        // 10 * 15000 * 0.5 = 75_000, plus 10 * 2000 * 0.2 = 4_000
+        assert_eq!(debris.deuterium, 79_000);
+        // The metal and crystal halves are untouched by the option.
+        assert_eq!(debris.metal, 290_000);
+        assert_eq!(debris.crystal, 155_000);
+    }
+
+    /// Deuterium is opt-in, so the same battle in a standard universe leaves
+    /// none — and `total()` must not quietly start counting it.
+    #[test]
+    fn deuterium_stays_out_of_the_field_by_default() {
+        let entity_db = load_entity_stats();
+
+        let mut attacker_losses = HashMap::new();
+        attacker_losses.insert(211, 10); // Bombers, which do cost deuterium
+
+        let debris = calculate_debris(&attacker_losses, &HashMap::new(), &entity_db, standard());
+
+        assert_eq!(debris.deuterium, 0);
+        assert_eq!(debris.total(), debris.metal + debris.crystal);
     }
 
     #[test]
@@ -283,6 +373,7 @@ mod tests {
         let debris = DebrisField {
             metal: 90000,
             crystal: 30000,
+            deuterium: 0,
         };
 
         let loot = PlanetResources {
@@ -317,7 +408,7 @@ mod tests {
         let mut losses = HashMap::new();
         losses.insert(218, 10);
 
-        let debris = calculate_debris(&losses, &HashMap::new(), &entity_db, 30.0);
+        let debris = calculate_debris(&losses, &HashMap::new(), &entity_db, standard());
 
         // 10 Reapers * 30% debris
         // Metal: 10 * 85000 * 0.30 = 255,000
@@ -341,7 +432,7 @@ mod tests {
         let mut losses = HashMap::new();
         losses.insert(219, 100);
 
-        let debris = calculate_debris(&losses, &HashMap::new(), &entity_db, 30.0);
+        let debris = calculate_debris(&losses, &HashMap::new(), &entity_db, standard());
 
         // 100 Pathfinders * 30% debris
         // Metal: 100 * 8000 * 0.30 = 240,000

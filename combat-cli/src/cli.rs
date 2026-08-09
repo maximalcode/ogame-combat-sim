@@ -202,10 +202,13 @@ pub fn build_request(args: &SimArgs) -> Result<CombatRequest, String> {
         .map_err(|e| format!("--planet: {e}"))?;
 
     // `..Default::default()` covers the fields with no flag — the slot lists,
-    // the round-composition switch, and the three request fields no engine code
-    // reads yet. It is only safe because `CombatRequest`'s `Default` is
-    // hand-written to agree with the serde defaults; a derived one would set
-    // `debris_percentage` to 0.0 here.
+    // the round-composition switch, the two bonus blocks no engine code reads
+    // yet, and `universe_settings`. Leaving that one `None` is what makes
+    // `--debris` mean anything: it is the fallback the engine falls back *to*,
+    // so a shorthand battle is scored under standard-universe debris rules.
+    // Reach for `--file` to describe a universe. It is only safe because
+    // `CombatRequest`'s `Default` is hand-written to agree with the serde
+    // defaults; a derived one would set `debris_percentage` to 0.0 here.
     Ok(CombatRequest {
         attacker,
         defender,

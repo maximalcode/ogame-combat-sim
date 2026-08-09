@@ -224,32 +224,16 @@ impl ReportBuilder {
         };
 
         // Average debris
-        let avg_debris_metal = results
-            .results
-            .iter()
-            .map(|r| r.debris_field.metal)
-            .sum::<u64>()
-            / u64::from(results.simulations);
-        let avg_debris_crystal = results
-            .results
-            .iter()
-            .map(|r| r.debris_field.crystal)
-            .sum::<u64>()
-            / u64::from(results.simulations);
+        let avg_debris_metal = Self::average(results, |r| r.debris_field.metal);
+        let avg_debris_crystal = Self::average(results, |r| r.debris_field.crystal);
+        let avg_debris_deuterium = Self::average(results, |r| r.debris_field.deuterium);
 
         // Average loot
-        let avg_loot_metal = results.results.iter().map(|r| r.loot.metal).sum::<u64>()
-            / u64::from(results.simulations);
-        let avg_loot_crystal = results.results.iter().map(|r| r.loot.crystal).sum::<u64>()
-            / u64::from(results.simulations);
-        let avg_loot_deut = results
-            .results
-            .iter()
-            .map(|r| r.loot.deuterium)
-            .sum::<u64>()
-            / u64::from(results.simulations);
+        let avg_loot_metal = Self::average(results, |r| r.loot.metal);
+        let avg_loot_crystal = Self::average(results, |r| r.loot.crystal);
+        let avg_loot_deut = Self::average(results, |r| r.loot.deuterium);
 
-        // Average profit
+        // Average profit. Signed, so it is its own pass rather than a cast.
         let avg_attacker_profit = results
             .results
             .iter()
@@ -273,6 +257,7 @@ impl ReportBuilder {
             debris_field: DebrisField {
                 metal: avg_debris_metal,
                 crystal: avg_debris_crystal,
+                deuterium: avg_debris_deuterium,
             },
             loot: PlanetResources {
                 metal: avg_loot_metal,
@@ -287,6 +272,15 @@ impl ReportBuilder {
             attacker_slots: None,
             defender_slots: None,
         }
+    }
+
+    /// Mean of one unsigned figure across every simulation.
+    ///
+    /// Integer division, so the average of a resource is rounded down — the
+    /// same arithmetic each of these averages used when they were written out
+    /// one at a time.
+    fn average(results: &CombatResults, pick: impl Fn(&SimulationResult) -> u64) -> u64 {
+        results.results.iter().map(pick).sum::<u64>() / u64::from(results.simulations)
     }
 
     /// Average fleet compositions

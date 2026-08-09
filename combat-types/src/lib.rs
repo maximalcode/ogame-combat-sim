@@ -65,12 +65,51 @@ pub struct UniverseSettings {
     pub donut_systems: bool,
     #[serde(default = "default_one")]
     pub fleet_speed: u8,
+    /// Percentage of destroyed *ships* that becomes debris. Per-universe in the
+    /// live game, 30–80%, 30% in a standard universe.
     #[serde(default = "default_debris_fleet")]
     pub debris_fleet: u8,
+    /// Percentage of destroyed *defences* that becomes debris. 0–80%, and 0 —
+    /// no defence debris at all — in a standard universe.
     #[serde(default)]
     pub debris_defence: u8,
+    /// Whether destroyed hulls also leave their deuterium cost in the debris
+    /// field. A per-universe option since v9.2.0-beta1 (Feb 2023); off in a
+    /// standard universe, which is why any claim that debris is only ever metal
+    /// and crystal reads as true until you meet a universe that enabled it.
+    #[serde(default)]
+    pub debris_deuterium: bool,
     #[serde(default)]
     pub deuterium_save_factor: u8,
+}
+
+/// The debris rules a single battle is resolved under, after
+/// [`CombatRequest::debris_settings`] has settled which of the two places they
+/// can come from wins.
+///
+/// A separate type from `UniverseSettings` because it is the part the engine
+/// actually consumes: galaxies, systems and fleet speed have nothing to say
+/// about a wreck field.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DebrisSettings {
+    /// Percentage of destroyed ships that becomes debris.
+    pub fleet_percentage: u8,
+    /// Percentage of destroyed defences that becomes debris.
+    pub defence_percentage: u8,
+    /// Whether deuterium joins metal and crystal in the field.
+    pub deuterium: bool,
+}
+
+/// A standard universe, and the same rules the engine applied before universe
+/// settings were read: 30% of destroyed ships, no defence debris, no deuterium.
+impl Default for DebrisSettings {
+    fn default() -> Self {
+        Self {
+            fleet_percentage: default_debris_fleet(),
+            defence_percentage: 0,
+            deuterium: false,
+        }
+    }
 }
 
 fn default_galaxies() -> u8 {
@@ -102,6 +141,7 @@ impl Default for UniverseSettings {
             fleet_speed: default_one(),
             debris_fleet: default_debris_fleet(),
             debris_defence: 0,
+            debris_deuterium: false,
             deuterium_save_factor: 0,
         }
     }
@@ -193,16 +233,21 @@ impl PlanetResources {
 }
 
 /// Debris field from destroyed ships
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct DebrisField {
     pub metal: u64,
     pub crystal: u64,
+    /// Zero unless the universe has deuterium debris switched on — see
+    /// [`UniverseSettings::debris_deuterium`]. Defaulted rather than required so
+    /// a stored field from before the option existed still deserializes.
+    #[serde(default)]
+    pub deuterium: u64,
 }
 
 impl DebrisField {
     #[must_use]
     pub fn total(&self) -> u64 {
-        self.metal + self.crystal
+        self.metal + self.crystal + self.deuterium
     }
 }
 
@@ -219,6 +264,9 @@ pub struct CombatRequest {
     pub defender_slots: Option<Vec<PartySlot>>,
     #[serde(default)]
     pub planet_resources: Option<PlanetResources>,
+    /// Percentage of destroyed ships that becomes debris, for requests that do
+    /// not carry a `universe_settings` block. **When they do, it wins and this
+    /// field is ignored** — see [`CombatRequest::debris_settings`].
     #[serde(default = "default_debris_percentage")]
     pub debris_percentage: f32,
     pub use_rapid_fire: bool,
@@ -289,6 +337,41 @@ impl Default for CombatRequest {
     }
 }
 
+impl CombatRequest {
+    /// Settle which of the two places debris rules can come from wins.
+    ///
+    /// A request can describe debris twice — once as the top-level
+    /// `debris_percentage`, once inside `universe_settings` — and the two can
+    /// disagree. **`universe_settings` wins whenever it is present**, because a
+    /// caller who has gone to the trouble of describing a universe means it;
+    /// `debris_percentage` is the fallback for the requests that do not.
+    ///
+    /// The fallback deliberately reports no defence debris and no deuterium,
+    /// which is what a standard universe does and, not by coincidence, exactly
+    /// what this engine computed before universe settings were read at all. A
+    /// request with `universe_settings: null` therefore produces the same
+    /// wreck field it always did.
+    #[must_use]
+    pub fn debris_settings(&self) -> DebrisSettings {
+        self.universe_settings.as_ref().map_or_else(
+            || DebrisSettings {
+                // Saturating, so a caller who puts a nonsense figure in an
+                // `f32` field gets a clamped percentage rather than a wrapped
+                // one. `as` on a float already saturates at the integer bounds
+                // in Rust; the clamp pins the upper end at 100 rather than 255.
+                fleet_percentage: self.debris_percentage.clamp(0.0, 100.0) as u8,
+                defence_percentage: 0,
+                deuterium: false,
+            },
+            |settings| DebrisSettings {
+                fleet_percentage: settings.debris_fleet,
+                defence_percentage: settings.debris_defence,
+                deuterium: settings.debris_deuterium,
+            },
+        )
+    }
+}
+
 /// Combat outcome for a single simulation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CombatOutcome {
@@ -349,6 +432,13 @@ pub struct CombatResults {
     pub results: Vec<SimulationResult>,
     pub duration_ms: u64,
     pub average_rounds: f64,
+    /// The debris rules these battles were actually scored under, after
+    /// [`CombatRequest::debris_settings`] resolved them. Reported rather than
+    /// dropped so a caller can see which of the two sources won without having
+    /// to re-derive the rule — a wreck field that disagrees with the game is
+    /// far easier to explain when the percentages behind it are visible.
+    #[serde(default)]
+    pub debris_settings: DebrisSettings,
 }
 
 impl CombatResults {
@@ -362,6 +452,7 @@ impl CombatResults {
             results: Vec::with_capacity(simulations as usize),
             duration_ms: 0,
             average_rounds: 0.0,
+            debris_settings: DebrisSettings::default(),
         }
     }
 
@@ -430,6 +521,72 @@ mod tests {
     #[test]
     fn default_runs_a_nonzero_number_of_simulations() {
         assert!(CombatRequest::default().simulations > 0);
+    }
+
+    /// The precedence rule, stated as a test because a comment cannot fail.
+    /// `universe_settings` describes debris and so does the top-level
+    /// `debris_percentage`; when both are present the settings win.
+    #[test]
+    fn universe_settings_beat_the_top_level_debris_percentage() {
+        let request = CombatRequest {
+            debris_percentage: 30.0,
+            universe_settings: Some(UniverseSettings {
+                debris_fleet: 80,
+                debris_defence: 50,
+                debris_deuterium: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            request.debris_settings(),
+            DebrisSettings {
+                fleet_percentage: 80,
+                defence_percentage: 50,
+                deuterium: true,
+            }
+        );
+    }
+
+    /// The other half of the rule: with no settings block the top-level field
+    /// is the fallback, and it describes fleets only — which is exactly how the
+    /// engine behaved before universe settings were wired in.
+    #[test]
+    fn the_top_level_debris_percentage_is_the_fallback() {
+        let request = CombatRequest {
+            debris_percentage: 45.0,
+            universe_settings: None,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            request.debris_settings(),
+            DebrisSettings {
+                fleet_percentage: 45,
+                defence_percentage: 0,
+                deuterium: false,
+            }
+        );
+    }
+
+    /// A universe's debris percentages are whole numbers, but the fallback
+    /// field is an `f32` a caller can put anything in. Truncation towards zero
+    /// is the safe reading — it never invents debris that is not there — and
+    /// the saturating cast keeps `1e9` from wrapping round to a small figure.
+    #[test]
+    fn a_nonsensical_fallback_percentage_cannot_wrap_around() {
+        let huge = CombatRequest {
+            debris_percentage: 1e9,
+            ..Default::default()
+        };
+        assert_eq!(huge.debris_settings().fleet_percentage, 100);
+
+        let negative = CombatRequest {
+            debris_percentage: -20.0,
+            ..Default::default()
+        };
+        assert_eq!(negative.debris_settings().fleet_percentage, 0);
     }
 
     #[test]

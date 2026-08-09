@@ -18,8 +18,9 @@ The engine implements OGame's combat resolution as it actually behaves:
 - **Rapid fire** — the full cross-table, including chained re-rolls
 - **Shield bounce** — shots under 1% of shield strength are absorbed entirely
 - **Explosions** — hull-integrity roll after each round
-- **Debris fields** — with configurable metal/crystal recovery, moon chance and
-  the recycler count needed to collect
+- **Debris fields** — per-universe recovery rates, set separately for ships and
+  defences, with deuterium debris where the universe enables it, plus moon
+  chance and the recycler count needed to collect
 - **Loot** — plunder at 50/75/100%, capped by surviving cargo capacity
 - **Downscaling** — battles above ten million ships are simulated at reduced
   scale and extrapolated, so a fleet of any size resolves in reasonable time
@@ -39,13 +40,12 @@ modifiers:
 | Lifeform research bonuses | v9 (2022) | Per-ship-type bonus to hull, shield and firepower. The largest gap by far. |
 | Player class bonuses | v7 | General grants +2 effective Weapons/Shielding/Armour levels |
 | Alliance class bonuses | v8 (2021) | Warrior grants +1 effective level to all three |
-| Deuterium in debris | v9.2 (2023) | A per-universe option; only metal and crystal are produced here |
 | v13 instant-calc rule | v13 (2026) | Battles short-circuit above a 10,000× attack-power ratio |
 
 In practice: for a battle with no lifeforms and no classes, results should be
 sound. For a developed 2026 account they will be optimistic or pessimistic
 depending on who holds the bonuses, because the engine currently sees none of
-them. All five are tracked in the issues, and the fix is one additive term per
+them. All four are tracked in the issues, and the fix is one additive term per
 stat rather than anything structural.
 
 Stating this plainly matters more than the gaps do — every simulator in this
