@@ -105,6 +105,9 @@ cargo fmt --check \
   deliberately does not copy either one** — a local binary spending its own CPU
   has no shared resource to protect, and `simulations_are_not_capped_at_the_api_limit`
   in `combat-cli/src/cli.rs` is there to stop someone "fixing" the discrepancy.
+- **clap renders `///` into `--help`.** A doc comment on a field in
+  `combat-cli/src/cli.rs` is user-facing text, not a note to the next reader.
+  Internal rationale goes in a `//` comment above it.
 - **The entity name table is hand-written.** `EntityStats` has no name field, so
   `combat-types/src/names.rs` carries names and aliases separately. Two tests
   assert the two tables cover exactly the same ids in both directions; add a

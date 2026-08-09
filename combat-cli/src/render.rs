@@ -47,6 +47,25 @@ fn display_name(entity_type: EntityType) -> String {
     name_of(entity_type).map_or_else(|| format!("Entity {entity_type}"), ToOwned::to_owned)
 }
 
+// Column layouts for the two tables. Macros rather than consts because a
+// format string has to be a literal at the call site — a `&str` const would be
+// printed, not applied. Stated once each so a header and its rows cannot drift.
+macro_rules! round_row {
+    ($out:expr, $($cell:expr),+ $(,)?) => {
+        let _ = writeln!($out, "  {:>5}  {:>21}  {:>21}  {:>14}  {:>14}", $($cell),+);
+    };
+}
+
+macro_rules! entity_row {
+    ($out:expr, $($cell:expr),+ $(,)?) => {
+        let _ = writeln!(
+            $out,
+            "{:>4}  {:<24}{:<22}{:>9}{:>8}{:>11}{:>11}{:>11}{:>11}{:>11}",
+            $($cell),+
+        );
+    };
+}
+
 /// One label-and-value line. Every aligned line in the report goes through
 /// here, so the two column widths are stated once instead of at each call site.
 fn row(out: &mut String, indent: &str, label: &str, value: &str) {
@@ -238,14 +257,16 @@ fn write_economics(out: &mut String, economics: &EconomicSummary) {
 /// meaningful per-round narrative — so this reads a single [`SimulationResult`]
 /// instead, and the header says which one. Presenting one battle's rounds as if
 /// they were the run's would be the actual mistake here.
+///
+/// Always the run's first battle. Any single battle is as representative as any
+/// other, and a parameter for choosing one would be a knob nothing turns.
 #[must_use]
-pub fn render_rounds(result: &SimulationResult, index: usize, total: u32) -> String {
+pub fn render_rounds(result: &SimulationResult, total: u32) -> String {
     let mut out = String::new();
 
     let _ = writeln!(
         out,
-        "\nRounds — simulation {} of {} (one battle, not an average)\n",
-        index + 1,
+        "\nRounds — simulation 1 of {} (one battle, not an average)\n",
         thousands(total.into())
     );
 
@@ -254,16 +275,18 @@ pub fn render_rounds(result: &SimulationResult, index: usize, total: u32) -> Str
         return out;
     };
 
-    let _ = writeln!(
+    round_row!(
         out,
-        "  {:>5}  {:>21}  {:>21}  {:>14}  {:>14}",
-        "Round", "Attackers", "Defenders", "Att. damage", "Def. damage"
+        "Round",
+        "Attackers",
+        "Defenders",
+        "Att. damage",
+        "Def. damage"
     );
 
     for round in rounds {
-        let _ = writeln!(
+        round_row!(
             out,
-            "  {:>5}  {:>21}  {:>21}  {:>14}  {:>14}",
             round.round_number,
             survivors(round.attackers_start, round.attackers_end),
             survivors(round.defenders_start, round.defenders_end),
@@ -290,17 +313,17 @@ fn survivors(start: u32, end: u32) -> String {
 
 /// The entity table: what `-a` and `-d` will accept, and what each unit is worth.
 ///
-/// Rapid-fire tables are left out on purpose — they are two maps per entity and
-/// would need a page of their own rather than a column.
+/// Five of `EntityStats`' twelve fields are left out, and the footer says so:
+/// the two rapid-fire tables are maps that would need a page rather than a
+/// column, and base speed and fuel consumption belong to flight, not battle.
 #[must_use]
 pub fn render_entities() -> String {
     let stats = entity_stats();
     let mut out = String::new();
 
-    let _ = writeln!(
-        out,
-        "{:>4}  {:<24}{:<22}{:>9}{:>8}{:>11}{:>11}{:>11}{:>11}{:>11}",
-        "ID", "Name", "Aliases", "Weapon", "Shield", "Armour", "Metal", "Crystal", "Deut", "Cargo"
+    entity_row!(
+        out, "ID", "Name", "Aliases", "Weapon", "Shield", "Armour", "Metal", "Crystal", "Deut",
+        "Cargo"
     );
 
     for entity in ENTITY_INFO {
@@ -310,9 +333,8 @@ pub fn render_entities() -> String {
         let Some(stat) = stats.get(&entity.entity_type) else {
             continue;
         };
-        let _ = writeln!(
+        entity_row!(
             out,
-            "{:>4}  {:<24}{:<22}{:>9}{:>8}{:>11}{:>11}{:>11}{:>11}{:>11}",
             entity.entity_type,
             entity.name,
             entity.aliases.join(", "),
@@ -329,7 +351,8 @@ pub fn render_entities() -> String {
     let _ = writeln!(
         out,
         "\nNames are matched without case or punctuation, so \"Light Fighter\", \
-         \"light-fighter\" and \"lf\" are the same ship.\nRapid-fire tables are not shown."
+         \"light-fighter\" and \"lf\" are the same ship.\nNot shown: rapid-fire tables, \
+         base speed and fuel consumption — none of them affect combat."
     );
 
     out
@@ -412,7 +435,7 @@ mod tests {
             attacker_slots: None,
             defender_slots: None,
         };
-        let out = render_rounds(&result, 0, 100);
+        let out = render_rounds(&result, 100);
         assert!(out.contains("simulation 1 of 100"), "{out}");
         assert!(out.contains("no round detail"), "{out}");
     }

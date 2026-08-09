@@ -109,14 +109,20 @@ fn normalise(token: &str) -> String {
         .collect()
 }
 
+/// The entry for an id, if there is one.
+///
+/// A linear scan of 27 entries, which is cheaper than the hash it would take to
+/// avoid it. Only the token lookup — which runs against arbitrary user input
+/// rather than a known id — earns a map.
+fn find(entity_type: EntityType) -> Option<&'static EntityInfo> {
+    ENTITY_INFO.iter().find(|e| e.entity_type == entity_type)
+}
+
 /// The display name for an entity type, or `None` if the id is not one this
 /// simulator knows.
 #[must_use]
 pub fn name_of(entity_type: EntityType) -> Option<&'static str> {
-    ENTITY_INFO
-        .iter()
-        .find(|e| e.entity_type == entity_type)
-        .map(|e| e.name)
+    find(entity_type).map(|e| e.name)
 }
 
 /// Resolve a user-typed token to an entity type.
@@ -130,10 +136,7 @@ pub fn name_of(entity_type: EntityType) -> Option<&'static str> {
 pub fn resolve(token: &str) -> Option<EntityType> {
     let trimmed = token.trim();
     if let Ok(id) = trimmed.parse::<EntityType>() {
-        return ENTITY_INFO
-            .iter()
-            .find(|e| e.entity_type == id)
-            .map(|e| e.entity_type);
+        return find(id).map(|e| e.entity_type);
     }
     BY_TOKEN.get(&normalise(trimmed)).copied()
 }

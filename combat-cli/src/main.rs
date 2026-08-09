@@ -71,7 +71,7 @@ fn simulate(args: &SimArgs) -> Result<String, String> {
             .results
             .first()
             .ok_or_else(|| "no simulations were run, so there are no rounds to show".to_owned())?;
-        output.push_str(&render::render_rounds(first, 0, results.simulations));
+        output.push_str(&render::render_rounds(first, results.simulations));
     }
 
     Ok(output)

@@ -14,7 +14,7 @@
 //! `--downscaling off` really turns it off.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use combat_types::{CombatRequest, PartyData};
+use combat_types::{CombatRequest, PartyData, Technology};
 
 use crate::args::{parse_fleet, parse_resources, parse_tech};
 
@@ -85,11 +85,11 @@ pub struct SimArgs {
     #[arg(long, conflicts_with = "file")]
     pub defender_tech: Option<String>,
 
+    // The defaults below are read off `CombatRequest::default()` rather than
+    // written out, so the flags and the library cannot disagree about what
+    // "unset" means. Kept as `//` and not `///` because clap renders doc
+    // comments into `--help`, where our internal reasoning has no business.
     /// Battles to run. Not capped: this is your CPU, not a shared server.
-    ///
-    /// The default is read off `CombatRequest::default()` rather than written
-    /// here, so the flag and the library cannot disagree about what "unset"
-    /// means. Same for --debris and --plunder below.
     #[arg(short = 'n', long, default_value_t = CombatRequest::default().simulations, conflicts_with = "file")]
     pub simulations: u32,
 
@@ -102,15 +102,20 @@ pub struct SimArgs {
         long,
         value_name = "PERCENT",
         default_value_t = CombatRequest::default().debris_percentage,
+        value_parser = percentage,
         conflicts_with = "file",
     )]
     pub debris: f32,
 
     /// Percentage of the planet's resources a winning attacker takes.
+    ///
+    /// In game this is 50, 75 or 100 depending on the attacker's class; any
+    /// value up to 100 is accepted here because the engine takes one.
     #[arg(
         long,
         value_name = "PERCENT",
         default_value_t = CombatRequest::default().plunder_percentage,
+        value_parser = clap::value_parser!(u8).range(0..=100),
         conflicts_with = "file",
     )]
     pub plunder: u8,
@@ -134,22 +139,60 @@ pub struct SimArgs {
     pub file: Option<std::path::PathBuf>,
 }
 
+/// `clap`'s numeric ranges only cover integers, so the one float flag needs its
+/// own parser. Without it `--debris 900` is accepted and nine times the wreck is
+/// salvaged — invalid input that exits zero.
+fn percentage(raw: &str) -> Result<f32, String> {
+    let value: f32 = raw
+        .parse()
+        .map_err(|_| format!("{raw:?} is not a number"))?;
+    if (0.0..=100.0).contains(&value) {
+        Ok(value)
+    } else {
+        Err(format!("{value} is not a percentage between 0 and 100"))
+    }
+}
+
+/// One side of the battle, so the two sides cannot be assembled differently.
+///
+/// `label` is the flag name the error should blame — `"attacker"` produces
+/// `--attacker:` and `--attacker-tech:` — because a message that says only
+/// "unknown entity" leaves the user reading both halves of their command.
+fn party(
+    label: &str,
+    fleet: &str,
+    tech: Option<&str>,
+    shared: Technology,
+) -> Result<PartyData, String> {
+    let entities = parse_fleet(fleet).map_err(|e| format!("--{label}: {e}"))?;
+    let technology = match tech {
+        Some(spec) => parse_tech(spec).map_err(|e| format!("--{label}-tech: {e}"))?,
+        None => shared,
+    };
+    Ok(PartyData {
+        technology,
+        entities,
+    })
+}
+
 /// Build a request from the flags.
 ///
 /// Not used for `--file`; that path goes through [`parse_request_json`].
 pub fn build_request(args: &SimArgs) -> Result<CombatRequest, String> {
-    let attacker_entities = parse_fleet(&args.attacker).map_err(|e| format!("--attacker: {e}"))?;
-    let defender_entities = parse_fleet(&args.defender).map_err(|e| format!("--defender: {e}"))?;
-
     let shared_tech = parse_tech(&args.tech).map_err(|e| format!("--tech: {e}"))?;
-    let attacker_tech = match args.attacker_tech.as_deref() {
-        Some(spec) => parse_tech(spec).map_err(|e| format!("--attacker-tech: {e}"))?,
-        None => shared_tech,
-    };
-    let defender_tech = match args.defender_tech.as_deref() {
-        Some(spec) => parse_tech(spec).map_err(|e| format!("--defender-tech: {e}"))?,
-        None => shared_tech,
-    };
+
+    let attacker = party(
+        "attacker",
+        &args.attacker,
+        args.attacker_tech.as_deref(),
+        shared_tech,
+    )?;
+    let defender = party(
+        "defender",
+        &args.defender,
+        args.defender_tech.as_deref(),
+        shared_tech,
+    )?;
 
     let planet_resources = args
         .planet
@@ -164,14 +207,8 @@ pub fn build_request(args: &SimArgs) -> Result<CombatRequest, String> {
     // hand-written to agree with the serde defaults; a derived one would set
     // `debris_percentage` to 0.0 here.
     Ok(CombatRequest {
-        attacker: PartyData {
-            technology: attacker_tech,
-            entities: attacker_entities,
-        },
-        defender: PartyData {
-            technology: defender_tech,
-            entities: defender_entities,
-        },
+        attacker,
+        defender,
         planet_resources,
         debris_percentage: args.debris,
         use_rapid_fire: !args.no_rapid_fire,
@@ -183,8 +220,25 @@ pub fn build_request(args: &SimArgs) -> Result<CombatRequest, String> {
 }
 
 /// Deserialize a request from the JSON body the API accepts.
+///
+/// Goes through `serde_path_to_error` rather than `serde_json::from_str` so a
+/// wrong-typed value reports which field it was. Plain serde says
+/// `invalid type: string "lots", expected u32 at line 1 column 114` and leaves
+/// the user counting columns; this says `attacker.entities.206` as well.
 pub fn parse_request_json(json: &str) -> Result<CombatRequest, String> {
-    serde_json::from_str(json).map_err(|e| format!("invalid combat request JSON: {e}"))
+    let deserializer = &mut serde_json::Deserializer::from_str(json);
+
+    serde_path_to_error::deserialize(deserializer).map_err(|error| {
+        let path = error.path().to_string();
+        let inner = error.into_inner();
+        // The path is "." when the failure is not inside any field — malformed
+        // JSON, or a body that is not an object at all.
+        if path == "." {
+            format!("invalid combat request JSON: {inner}")
+        } else {
+            format!("invalid combat request JSON at {path}: {inner}")
+        }
+    })
 }
 
 /// Reject a request that cannot produce a report, with a message naming the
@@ -366,6 +420,28 @@ mod tests {
         assert!(err.contains("defender-tech"), "should name the flag: {err}");
     }
 
+    /// Percentages are the one place the flags can produce a request the engine
+    /// will happily run and no player could ever face — 200% plunder takes twice
+    /// what the planet holds. clap rejects them before `build_request` sees them,
+    /// so these assert on the parse rather than the result.
+    #[test]
+    fn percentages_above_a_hundred_are_rejected() {
+        assert!(
+            request_from(&["combat-cli", "sim", "-a", "cruiser:1", "--plunder", "200"]).is_err()
+        );
+        assert!(
+            request_from(&["combat-cli", "sim", "-a", "cruiser:1", "--debris", "900"]).is_err()
+        );
+        assert!(request_from(&["combat-cli", "sim", "-a", "cruiser:1", "--debris", "-1"]).is_err());
+    }
+
+    #[test]
+    fn percentages_within_range_are_accepted() {
+        let request =
+            request_from(&["combat-cli", "sim", "-a", "cruiser:1", "--plunder", "75"]).unwrap();
+        assert_eq!(request.plunder_percentage, 75);
+    }
+
     #[test]
     fn two_empty_fleets_are_rejected() {
         let err = validate(&CombatRequest::default()).unwrap_err();
@@ -425,6 +501,23 @@ mod tests {
         )
         .expect("minimal body should deserialize");
         assert!(validate(&request).is_ok());
+    }
+
+    /// "Invalid input exits non-zero with a message naming the offending
+    /// field" has to hold for `--file` too, and serde on its own only offers a
+    /// line and column.
+    #[test]
+    fn a_wrong_typed_json_field_is_named() {
+        let err = parse_request_json(
+            r#"{ "attacker": { "technology": {}, "entities": { "206": "lots" } },
+                 "defender": { "technology": {}, "entities": {} },
+                 "use_rapid_fire": true, "simulations": 10 }"#,
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("attacker.entities"),
+            "should name the field: {err}"
+        );
     }
 
     #[test]
