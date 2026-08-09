@@ -66,28 +66,28 @@ fn test_with_logging_small_scale() {
     println!(
         "  Cruiser Losses: {} / 100 ({:.1}%)",
         cruiser_losses,
-        (cruiser_losses as f64 / 100.0) * 100.0
+        (f64::from(cruiser_losses) / 100.0) * 100.0
     );
-    println!("  Cruisers Remaining: {}", cruiser_remaining);
+    println!("  Cruisers Remaining: {cruiser_remaining}");
     println!(
         "  LF Losses: {} / 1000 ({:.1}%)",
         lf_losses,
-        (lf_losses as f64 / 1000.0) * 100.0
+        (f64::from(lf_losses) / 1000.0) * 100.0
     );
-    println!("  LFs Remaining: {}", lf_remaining);
+    println!("  LFs Remaining: {lf_remaining}");
     println!();
 
     // Calculate expected damage
     let rounds = result.rounds;
     let expected_lf_kills_per_round = 100 * 6; // 100 cruisers × 6 RF
-    let expected_total_lf_kills = expected_lf_kills_per_round * rounds as u32;
+    let expected_total_lf_kills = expected_lf_kills_per_round * u32::from(rounds);
 
     println!("Expected vs Actual:");
     println!(
         "  Expected LF kills: ~{}",
         expected_total_lf_kills.min(1000)
     );
-    println!("  Actual LF kills: {}", lf_losses);
+    println!("  Actual LF kills: {lf_losses}");
     println!();
 
     // Calculate LF damage to Cruisers
@@ -115,7 +115,7 @@ fn test_with_logging_small_scale() {
     } else {
         println!(
             "  ✅ Cruisers ARE dying! Loss rate: {:.1}%",
-            (cruiser_losses as f64 / 100.0) * 100.0
+            (f64::from(cruiser_losses) / 100.0) * 100.0
         );
     }
 }

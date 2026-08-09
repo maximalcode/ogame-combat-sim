@@ -1,9 +1,16 @@
+// clippy::implicit_hasher wants every public fn here generic over the map's
+// hasher. The maps are `FleetComposition` and the entity table — type aliases
+// with a fixed hasher, built by this crate and never by a caller — so the
+// generic parameter would appear in six signatures to be instantiated one way.
+#![allow(clippy::implicit_hasher)]
+
 use combat_types::EntityStats;
 use combat_types::{DebrisField, EntityType, FleetComposition, PlanetResources};
 use std::collections::HashMap;
 
 /// Calculate debris field from losses
 /// Now supports separate debris percentages for fleet and defence
+#[must_use]
 pub fn calculate_debris(
     attacker_losses: &FleetComposition,
     defender_losses: &FleetComposition,
@@ -21,6 +28,7 @@ pub fn calculate_debris(
 }
 
 /// Calculate debris field with separate fleet and defence percentages
+#[must_use]
 pub fn calculate_debris_extended(
     attacker_losses: &FleetComposition,
     defender_losses: &FleetComposition,
@@ -31,8 +39,8 @@ pub fn calculate_debris_extended(
     let mut metal = 0u64;
     let mut crystal = 0u64;
 
-    let fleet_factor = debris_fleet_pct as f32 / 100.0;
-    let defence_factor = debris_defence_pct as f32 / 100.0;
+    let fleet_factor = f32::from(debris_fleet_pct) / 100.0;
+    let defence_factor = f32::from(debris_defence_pct) / 100.0;
 
     // Calculate debris from attacker losses (always ships)
     for (&entity_type, &count) in attacker_losses {
@@ -64,18 +72,20 @@ pub fn calculate_debris_extended(
 }
 
 /// Calculate loot from planet resources
+#[must_use]
 pub fn calculate_loot(planet_resources: &PlanetResources, cargo_capacity: u64) -> PlanetResources {
     // Default 50% plunder
     calculate_loot_extended(planet_resources, cargo_capacity, 50)
 }
 
 /// Calculate loot with custom plunder percentage (50%, 75%, or 100%)
+#[must_use]
 pub fn calculate_loot_extended(
     planet_resources: &PlanetResources,
     cargo_capacity: u64,
     plunder_percentage: u8,
 ) -> PlanetResources {
-    let plunder_factor = plunder_percentage as f64 / 100.0;
+    let plunder_factor = f64::from(plunder_percentage) / 100.0;
     let max_metal = (planet_resources.metal as f64 * plunder_factor) as u64;
     let max_crystal = (planet_resources.crystal as f64 * plunder_factor) as u64;
     let max_deuterium = (planet_resources.deuterium as f64 * plunder_factor) as u64;
@@ -115,6 +125,7 @@ pub fn calculate_loot_extended(
 }
 
 /// Calculate total cargo capacity of a fleet
+#[must_use]
 pub fn calculate_cargo_capacity(
     fleet: &FleetComposition,
     entity_db: &HashMap<EntityType, EntityStats>,
@@ -123,7 +134,7 @@ pub fn calculate_cargo_capacity(
 
     for (&entity_type, &count) in fleet {
         if let Some(stats) = entity_db.get(&entity_type) {
-            capacity += stats.cargo_capacity as u64 * count as u64;
+            capacity += u64::from(stats.cargo_capacity) * u64::from(count);
         }
     }
 
@@ -131,6 +142,7 @@ pub fn calculate_cargo_capacity(
 }
 
 /// Calculate value of losses (metal + crystal + deuterium)
+#[must_use]
 pub fn calculate_losses_value(
     losses: &FleetComposition,
     entity_db: &HashMap<EntityType, EntityStats>,
@@ -139,9 +151,10 @@ pub fn calculate_losses_value(
 
     for (&entity_type, &count) in losses {
         if let Some(stats) = entity_db.get(&entity_type) {
-            value +=
-                (stats.cost_metal as u64 + stats.cost_crystal as u64 + stats.cost_deuterium as u64)
-                    * count as u64;
+            value += (u64::from(stats.cost_metal)
+                + u64::from(stats.cost_crystal)
+                + u64::from(stats.cost_deuterium))
+                * u64::from(count);
         }
     }
 
@@ -150,6 +163,7 @@ pub fn calculate_losses_value(
 
 /// Calculate profit for attacker
 /// Profit = Debris + Loot - Losses - Fuel Cost
+#[must_use]
 pub fn calculate_attacker_profit(
     debris: &DebrisField,
     loot: &PlanetResources,
@@ -167,6 +181,7 @@ pub fn calculate_attacker_profit(
 
 /// Calculate profit for defender
 /// Profit = Debris - Losses
+#[must_use]
 pub fn calculate_defender_profit(
     debris: &DebrisField,
     losses: &FleetComposition,
@@ -204,13 +219,13 @@ mod tests {
     #[test]
     fn test_calculate_loot_full_capacity() {
         let resources = PlanetResources {
-            metal: 100000,
+            metal: 100_000,
             crystal: 50000,
             deuterium: 25000,
         };
 
         // Enough cargo for all 50%
-        let loot = calculate_loot(&resources, 100000);
+        let loot = calculate_loot(&resources, 100_000);
 
         assert_eq!(loot.metal, 50000);
         assert_eq!(loot.crystal, 25000);
@@ -220,7 +235,7 @@ mod tests {
     #[test]
     fn test_calculate_loot_limited_capacity() {
         let resources = PlanetResources {
-            metal: 100000,
+            metal: 100_000,
             crystal: 50000,
             deuterium: 25000,
         };
@@ -244,7 +259,7 @@ mod tests {
         let capacity = calculate_cargo_capacity(&fleet, &entity_db);
 
         // Expected: 10 * 5000 + 5 * 25000 = 50000 + 125000 = 175000
-        assert_eq!(capacity, 175000);
+        assert_eq!(capacity, 175_000);
     }
 
     #[test]
@@ -258,7 +273,7 @@ mod tests {
 
         // Light Fighter: 3000 + 1000 + 0 = 4000 per ship
         // 100 * 4000 = 400,000
-        assert_eq!(value, 400000);
+        assert_eq!(value, 400_000);
     }
 
     #[test]
@@ -307,8 +322,8 @@ mod tests {
         // 10 Reapers * 30% debris
         // Metal: 10 * 85000 * 0.30 = 255,000
         // Crystal: 10 * 55000 * 0.30 = 165,000
-        assert_eq!(debris.metal, 255000, "Reaper debris metal");
-        assert_eq!(debris.crystal, 165000, "Reaper debris crystal");
+        assert_eq!(debris.metal, 255_000, "Reaper debris metal");
+        assert_eq!(debris.crystal, 165_000, "Reaper debris crystal");
     }
 
     #[test]
@@ -331,7 +346,7 @@ mod tests {
         // 100 Pathfinders * 30% debris
         // Metal: 100 * 8000 * 0.30 = 240,000
         // Crystal: 100 * 15000 * 0.30 = 450,000
-        assert_eq!(debris.metal, 240000, "Pathfinder debris metal");
-        assert_eq!(debris.crystal, 450000, "Pathfinder debris crystal");
+        assert_eq!(debris.metal, 240_000, "Pathfinder debris metal");
+        assert_eq!(debris.crystal, 450_000, "Pathfinder debris crystal");
     }
 }

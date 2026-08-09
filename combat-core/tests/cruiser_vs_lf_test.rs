@@ -1,10 +1,15 @@
+// A scenario script: set up a fleet, run it, print the numbers, assert on
+// them. Length here is the scenario being explicit, not a function doing
+// too much, so clippy::too_many_lines is waived for the file.
+#![allow(clippy::too_many_lines)]
+
 /// Test case for 350k Cruisers vs 2.5M Light Fighters
 ///
-/// Real OGame Result (Tech 10):
+/// Real `OGame` Result (Tech 10):
 /// - All 2.5M LFs destroyed
 /// - ~211k Cruisers survive (139k die)
 ///
-/// This test validates our combat mechanics against real OGame data.
+/// This test validates our combat mechanics against real `OGame` data.
 use combat_core::Simulator;
 use combat_types::{CombatRequest, PartyData, Technology};
 use std::collections::HashMap;
@@ -88,7 +93,7 @@ fn test_350k_cruisers_vs_2_5m_light_fighters() {
     let duration = start.elapsed();
 
     println!("Results:");
-    println!("  Time: {:?}", duration);
+    println!("  Time: {duration:?}");
     println!("  Attacker Wins: {}", results.attacker_wins);
     println!("  Defender Wins: {}", results.defender_wins);
     println!("  Draws: {}", results.draws);
@@ -102,16 +107,17 @@ fn test_350k_cruisers_vs_2_5m_light_fighters() {
     let mut total_lf_remaining = 0u64;
 
     for result in &results.results {
-        total_cruiser_losses += result.attacker_losses.get(&206).copied().unwrap_or(0) as u64;
-        total_cruiser_remaining += result.attacker_remaining.get(&206).copied().unwrap_or(0) as u64;
-        total_lf_losses += result.defender_losses.get(&204).copied().unwrap_or(0) as u64;
-        total_lf_remaining += result.defender_remaining.get(&204).copied().unwrap_or(0) as u64;
+        total_cruiser_losses += u64::from(result.attacker_losses.get(&206).copied().unwrap_or(0));
+        total_cruiser_remaining +=
+            u64::from(result.attacker_remaining.get(&206).copied().unwrap_or(0));
+        total_lf_losses += u64::from(result.defender_losses.get(&204).copied().unwrap_or(0));
+        total_lf_remaining += u64::from(result.defender_remaining.get(&204).copied().unwrap_or(0));
     }
 
-    let avg_cruiser_losses = total_cruiser_losses / results.simulations as u64;
-    let avg_cruiser_remaining = total_cruiser_remaining / results.simulations as u64;
-    let avg_lf_losses = total_lf_losses / results.simulations as u64;
-    let avg_lf_remaining = total_lf_remaining / results.simulations as u64;
+    let avg_cruiser_losses = total_cruiser_losses / u64::from(results.simulations);
+    let avg_cruiser_remaining = total_cruiser_remaining / u64::from(results.simulations);
+    let avg_lf_losses = total_lf_losses / u64::from(results.simulations);
+    let avg_lf_remaining = total_lf_remaining / u64::from(results.simulations);
 
     println!("Average Losses:");
     println!(
@@ -130,7 +136,7 @@ fn test_350k_cruisers_vs_2_5m_light_fighters() {
         avg_lf_losses,
         (avg_lf_losses as f64 / 2_500_000.0) * 100.0
     );
-    println!("  Light Fighters Remaining: {}", avg_lf_remaining);
+    println!("  Light Fighters Remaining: {avg_lf_remaining}");
     println!();
 
     println!("Real OGame Comparison:");
@@ -146,7 +152,7 @@ fn test_350k_cruisers_vs_2_5m_light_fighters() {
     // Analysis (no assertions, just print)
     let cruiser_loss_percentage = (avg_cruiser_losses as f64 / 350_000.0) * 100.0;
     println!("Analysis:");
-    println!("  Cruiser loss rate: {:.1}%", cruiser_loss_percentage);
+    println!("  Cruiser loss rate: {cruiser_loss_percentage:.1}%");
 
     if results.attacker_wins != 10 {
         println!(
@@ -156,13 +162,12 @@ fn test_350k_cruisers_vs_2_5m_light_fighters() {
     }
 
     if avg_lf_remaining > 0 {
-        println!("  ⚠️  WARNING: Some LFs survived: {}", avg_lf_remaining);
+        println!("  ⚠️  WARNING: Some LFs survived: {avg_lf_remaining}");
     }
 
     if cruiser_loss_percentage < 10.0 {
         println!(
-            "  ❌ BUG CONFIRMED: Too few Cruisers dying! Only {:.1}% losses",
-            cruiser_loss_percentage
+            "  ❌ BUG CONFIRMED: Too few Cruisers dying! Only {cruiser_loss_percentage:.1}% losses"
         );
         println!("     Expected: ~40% losses (139k out of 350k)");
         println!(

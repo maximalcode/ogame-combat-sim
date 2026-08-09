@@ -15,9 +15,9 @@ impl ModifiedStats {
         let base_armour = base_stats.armour as f32;
 
         // Technology bonus: +10% per level
-        let weapon_modifier = 1.0 + (tech.weapon as f32 * 0.1);
-        let shield_modifier = 1.0 + (tech.shield as f32 * 0.1);
-        let armour_modifier = 1.0 + (tech.armour as f32 * 0.1);
+        let weapon_modifier = 1.0 + (f32::from(tech.weapon) * 0.1);
+        let shield_modifier = 1.0 + (f32::from(tech.shield) * 0.1);
+        let armour_modifier = 1.0 + (f32::from(tech.armour) * 0.1);
 
         let modified_weapon = (base_weapon * weapon_modifier).floor() as u32;
         let modified_shield = (base_shield * shield_modifier).floor();
@@ -57,6 +57,11 @@ impl StatsCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Shield and hull are f32 and come out of a chain of multiplications, so
+    // `assert_eq!` is asserting bit equality on a computed float. The values
+    // below happen to be exactly representable today; a relative comparison
+    // says what the test actually means and does not depend on that luck.
+    use approx::assert_relative_eq;
     use combat_types::entities::load_entity_stats;
 
     #[test]
@@ -68,8 +73,8 @@ mod tests {
         let modified = ModifiedStats::calculate(light_fighter, &tech);
 
         assert_eq!(modified.weapon, 50);
-        assert_eq!(modified.shield, 10.0);
-        assert_eq!(modified.hull, 400.0); // 4000 * 0.1
+        assert_relative_eq!(modified.shield, 10.0);
+        assert_relative_eq!(modified.hull, 400.0); // 4000 * 0.1
     }
 
     #[test]
@@ -88,9 +93,9 @@ mod tests {
         // weapon: 50 * 2.0 = 100
         assert_eq!(modified.weapon, 100);
         // shield: 10 * 2.0 = 20
-        assert_eq!(modified.shield, 20.0);
+        assert_relative_eq!(modified.shield, 20.0);
         // hull: (4000 * 2.0) * 0.1 = 800
-        assert_eq!(modified.hull, 800.0);
+        assert_relative_eq!(modified.hull, 800.0);
     }
 
     #[test]
@@ -107,7 +112,7 @@ mod tests {
 
         let light_fighter_stats = cache.get(204).unwrap();
         assert_eq!(light_fighter_stats.weapon, 75); // 50 * 1.5
-        assert_eq!(light_fighter_stats.shield, 15.0); // 10 * 1.5
-        assert_eq!(light_fighter_stats.hull, 600.0); // (4000 * 1.5) * 0.1
+        assert_relative_eq!(light_fighter_stats.shield, 15.0); // 10 * 1.5
+        assert_relative_eq!(light_fighter_stats.hull, 600.0); // (4000 * 1.5) * 0.1
     }
 }

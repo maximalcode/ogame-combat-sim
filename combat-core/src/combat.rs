@@ -227,7 +227,6 @@ impl Party {
                 // Track damage before/after for metrics
                 let prev_shield = target.current_shield.max(0.0);
                 let prev_hull = target.current_hull.max(0.0);
-                let _was_alive = target.is_alive;
 
                 // Apply damage (using local variables to avoid borrow issues)
                 apply_damage_fast(weapon_power, target, rng);
@@ -248,7 +247,7 @@ impl Party {
                             // Calculate rapid fire probability
                             // Chance to shoot again = 1 - (1 / rapid_fire_value)
                             // e.g., rapid fire 5 = 80% chance
-                            let continue_probability = 1.0 - (1.0 / rf_value as f32);
+                            let continue_probability = 1.0 - (1.0 / f32::from(rf_value));
 
                             // Use pre-generated random number
                             let rf_check = if rng_idx < random_rf_checks.len() {
@@ -391,6 +390,7 @@ pub struct Combat {
 }
 
 impl Combat {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entity_db: combat_types::entities::load_entity_stats(),
@@ -534,6 +534,11 @@ impl Combat {
     }
 
     /// Simulate combat with explicit slots (A1/A2, D1/D2), returning per-slot results
+    // Long, and legitimately flagged: this is the round loop with slot
+    // bookkeeping threaded through it. Splitting it is real work with real
+    // risk to combat accuracy, so it is allowed here rather than done badly
+    // as a side effect of adopting a linter.
+    #[allow(clippy::too_many_lines)]
     pub fn simulate_single_with_slots(
         &self,
         attacker_slots: &[(String, PartyData)],

@@ -1,4 +1,9 @@
-/// Verify 1 Cruiser vs 20 LFs matches TrashSim range
+// A scenario script: set up a fleet, run it, print the numbers, assert on
+// them. Length here is the scenario being explicit, not a function doing
+// too much, so clippy::too_many_lines is waived for the file.
+#![allow(clippy::too_many_lines)]
+
+/// Verify 1 Cruiser vs 20 LFs matches `TrashSim` range
 use combat_core::Simulator;
 use combat_types::{CombatRequest, PartyData, Technology};
 use std::collections::HashMap;
@@ -97,41 +102,38 @@ fn test_1v20_outcome_range() {
     println!(
         "    • Cruiser wins: {} ({:.1}%)",
         cruiser_wins,
-        (cruiser_wins as f64 / 10.0)
+        (f64::from(cruiser_wins) / 10.0)
     );
     println!(
         "    • Cruiser dies round 1: {} ({:.1}%)",
         round_1_deaths,
-        (round_1_deaths as f64 / 10.0)
+        (f64::from(round_1_deaths) / 10.0)
     );
     println!(
         "    • Cruiser dies round 2: {} ({:.1}%)",
         round_2_deaths,
-        (round_2_deaths as f64 / 10.0)
+        (f64::from(round_2_deaths) / 10.0)
     );
     println!(
         "    • Cruiser dies round 3+: {} ({:.1}%)",
         round_3plus_deaths,
-        (round_3plus_deaths as f64 / 10.0)
+        (f64::from(round_3plus_deaths) / 10.0)
     );
     println!();
 
     println!("  LF Survivors:");
-    println!("    • Min: {} LFs", min_lf_survivors);
-    println!("    • Max: {} LFs", max_lf_survivors);
+    println!("    • Min: {min_lf_survivors} LFs");
+    println!("    • Max: {max_lf_survivors} LFs");
     println!();
 
     println!("  Distribution of LF Survivors:");
     let mut sorted_counts: Vec<_> = lf_survivor_counts.iter().collect();
     sorted_counts.sort_by_key(|(k, _)| **k);
     for (survivors, count) in sorted_counts {
-        let percentage = (*count as f64 / 1000.0) * 100.0;
+        let percentage = (f64::from(*count) / 1000.0) * 100.0;
         let bar_length = (percentage / 2.0) as usize;
         let bar = "█".repeat(bar_length);
-        println!(
-            "    {:2} LFs: {:4} times ({:5.1}%) {}",
-            survivors, count, percentage, bar
-        );
+        println!("    {survivors:2} LFs: {count:4} times ({percentage:5.1}%) {bar}");
     }
     println!();
 
@@ -145,18 +147,18 @@ fn test_1v20_outcome_range() {
     if cruiser_wins == 0 {
         println!("  ✅ Cruiser ALWAYS dies (matches TrashSim)");
     } else {
-        println!("  ❌ Cruiser sometimes wins! ({} times)", cruiser_wins);
+        println!("  ❌ Cruiser sometimes wins! ({cruiser_wins} times)");
         println!("     TrashSim: Cruiser should always die");
     }
 
     // Check round distribution
     let total_cruiser_deaths = round_1_deaths + round_2_deaths + round_3plus_deaths;
     if total_cruiser_deaths > 0 {
-        let round_1_pct = (round_1_deaths as f64 / total_cruiser_deaths as f64) * 100.0;
-        let round_2_pct = (round_2_deaths as f64 / total_cruiser_deaths as f64) * 100.0;
+        let round_1_pct = (f64::from(round_1_deaths) / f64::from(total_cruiser_deaths)) * 100.0;
+        let round_2_pct = (f64::from(round_2_deaths) / f64::from(total_cruiser_deaths)) * 100.0;
 
-        println!("  • Round 1 deaths: {:.1}%", round_1_pct);
-        println!("  • Round 2 deaths: {:.1}%", round_2_pct);
+        println!("  • Round 1 deaths: {round_1_pct:.1}%");
+        println!("  • Round 2 deaths: {round_2_pct:.1}%");
 
         if round_1_pct > 0.0 && round_2_pct > 0.0 {
             println!("  ✅ Cruiser dies in rounds 1-2 (matches TrashSim)");
@@ -166,14 +168,10 @@ fn test_1v20_outcome_range() {
     // Check LF survivor range
     if min_lf_survivors >= 4 && max_lf_survivors <= 14 {
         println!(
-            "  ✅ LF survivors: {}-{} (matches TrashSim range: 4-14)",
-            min_lf_survivors, max_lf_survivors
+            "  ✅ LF survivors: {min_lf_survivors}-{max_lf_survivors} (matches TrashSim range: 4-14)"
         );
     } else {
-        println!(
-            "  ⚠️  LF survivors: {}-{}",
-            min_lf_survivors, max_lf_survivors
-        );
+        println!("  ⚠️  LF survivors: {min_lf_survivors}-{max_lf_survivors}");
         println!("     TrashSim range: 4-14");
 
         if min_lf_survivors < 4 {

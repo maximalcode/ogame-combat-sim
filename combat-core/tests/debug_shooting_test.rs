@@ -65,10 +65,10 @@ fn test_small_scale_cruiser_vs_lf() {
     let lf_remaining = result.defender_remaining.get(&204).copied().unwrap_or(0);
 
     println!("Losses:");
-    println!("  Cruiser Losses: {} / 10", cruiser_losses);
-    println!("  Cruisers Remaining: {}", cruiser_remaining);
-    println!("  LF Losses: {} / 100", lf_losses);
-    println!("  LFs Remaining: {}", lf_remaining);
+    println!("  Cruiser Losses: {cruiser_losses} / 10");
+    println!("  Cruisers Remaining: {cruiser_remaining}");
+    println!("  LF Losses: {lf_losses} / 100");
+    println!("  LFs Remaining: {lf_remaining}");
     println!();
 
     // Calculate expected

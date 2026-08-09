@@ -65,8 +65,14 @@ cargo run -p combat-api           # server on :3000
 CI gate, worth running before pushing:
 
 ```bash
-cargo fmt --check && cargo clippy --workspace --all-targets && cargo test --workspace
+cargo fmt --check \
+  && cargo clippy --workspace --all-targets \
+  && cargo deny check advisories bans licenses \
+  && cargo test --workspace
 ```
+
+`cargo deny` is not in the toolchain — `cargo install cargo-deny` (CI pins
+0.20.2). Skipping it locally only defers the failure to CI.
 
 ## Things that will surprise you
 
@@ -82,6 +88,14 @@ cargo fmt --check && cargo clippy --workspace --all-targets && cargo test --work
   Both are HTTP-layer server protection; the library has no limits.
 - **Edition 2024 reserves `gen`.** That is why this uses rand 0.9
   (`random`, `random_range`, `from_os_rng`) rather than rand 0.8's `gen`.
+- **The clippy config has two halves.** Everything above the
+  `--- repo-specific ---` line in `Cargo.toml` is copied from maxi-quality and
+  should be regenerated with its `adopt.sh`, not hand-edited. Below it is this
+  repo's own policy — currently the four cast lints, allowed because ship
+  counts are integers and combat maths is floating point, so the whole engine
+  crosses between them. Anything narrower than a whole-repo policy belongs at
+  the site as `#[allow(...)]` with a written reason. There are ten: four in
+  `combat-core/src`, and `too_many_lines` on six scenario tests.
 - **`enable_round_compositions`** was called `enable_ogmem_metrics` in the old
   repo. "OGMem" was private jargon with no definition; the data — per-round,
   per-ship-type snapshots — is a real OGame report feature and was kept.

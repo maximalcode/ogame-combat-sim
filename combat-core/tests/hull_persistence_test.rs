@@ -67,8 +67,8 @@ fn test_hull_damage_persists_across_rounds() {
 
     println!("Results:");
     println!("  Rounds: {}", result.rounds);
-    println!("  Heavy Fighter Losses: {} / 3", hf_losses);
-    println!("  Cruiser Losses: {} / 1", cruiser_losses);
+    println!("  Heavy Fighter Losses: {hf_losses} / 3");
+    println!("  Cruiser Losses: {cruiser_losses} / 1");
     println!();
 
     if result.rounds >= 3 {

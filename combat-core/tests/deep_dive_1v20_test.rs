@@ -1,3 +1,8 @@
+// A scenario script: set up a fleet, run it, print the numbers, assert on
+// them. Length here is the scenario being explicit, not a function doing
+// too much, so clippy::too_many_lines is waived for the file.
+#![allow(clippy::too_many_lines)]
+
 /// Deep dive test: 1 Cruiser vs 20 LFs
 use combat_core::Simulator;
 use combat_types::{CombatRequest, PartyData, Technology};
@@ -96,20 +101,20 @@ fn test_1_cruiser_vs_20_lfs_deep_dive() {
     let mut total_rounds = 0u32;
 
     for result in &results.results {
-        total_cruiser_losses += result.attacker_losses.get(&206).copied().unwrap_or(0) as u64;
-        total_lf_losses += result.defender_losses.get(&204).copied().unwrap_or(0) as u64;
-        total_rounds += result.rounds as u32;
+        total_cruiser_losses += u64::from(result.attacker_losses.get(&206).copied().unwrap_or(0));
+        total_lf_losses += u64::from(result.defender_losses.get(&204).copied().unwrap_or(0));
+        total_rounds += u32::from(result.rounds);
     }
 
-    let avg_cruiser_losses = total_cruiser_losses as f64 / results.simulations as f64;
-    let avg_lf_losses = total_lf_losses as f64 / results.simulations as f64;
-    let avg_rounds = total_rounds as f64 / results.simulations as f64;
+    let avg_cruiser_losses = total_cruiser_losses as f64 / f64::from(results.simulations);
+    let avg_lf_losses = total_lf_losses as f64 / f64::from(results.simulations);
+    let avg_rounds = f64::from(total_rounds) / f64::from(results.simulations);
 
     let cruiser_survival_rate = ((100 - total_cruiser_losses) as f64 / 100.0) * 100.0;
 
     println!("📈 ACTUAL RESULTS (100 simulations):");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("  Average Rounds: {:.2}", avg_rounds);
+    println!("  Average Rounds: {avg_rounds:.2}");
     println!(
         "  Average LF Losses: {:.1} / 20 ({:.1}%)",
         avg_lf_losses,
@@ -120,7 +125,7 @@ fn test_1_cruiser_vs_20_lfs_deep_dive() {
         avg_cruiser_losses,
         avg_cruiser_losses * 100.0
     );
-    println!("  Cruiser Survival Rate: {:.1}%", cruiser_survival_rate);
+    println!("  Cruiser Survival Rate: {cruiser_survival_rate:.1}%");
     println!();
     println!("  Attacker Wins: {}", results.attacker_wins);
     println!("  Defender Wins: {}", results.defender_wins);

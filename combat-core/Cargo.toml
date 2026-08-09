@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 description = "The OGame fleet combat engine: rounds, rapid fire, shield bounce, explosions, debris and loot"
 
+# Opts this crate into [workspace.lints] in the root manifest. Cargo does not
+# inherit lints implicitly — a member without these two lines is unlinted.
+[lints]
+workspace = true
+
 [dependencies]
 combat-types = { path = "../combat-types", version = "0.1.0" }
 rand = { workspace = true }

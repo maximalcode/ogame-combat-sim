@@ -3,6 +3,10 @@ use combat_types::EntityType;
 /// A single combat entity instance
 #[derive(Debug, Clone)]
 pub struct Entity {
+    // clippy::struct_field_names wants this not to repeat the struct name. It
+    // is named for the domain type it holds, and `EntityType` is the name the
+    // whole workspace uses for "which ship or defence is this".
+    #[allow(clippy::struct_field_names)]
     pub entity_type: EntityType,
     pub is_alive: bool,
     pub current_shield: f32,

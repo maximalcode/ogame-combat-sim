@@ -1,4 +1,4 @@
-//! Ship and defence statistics for OGame.
+//! Ship and defence statistics for `OGame`.
 //!
 //! These are base values. Weapons, shielding and armour technology scale them
 //! by +10% per level; player class, alliance class and lifeform research add
@@ -7,8 +7,8 @@
 //! The numbers here are the game's own published unit stats — build costs,
 //! structural integrity, shield and weapon power, cargo capacity, base speed and
 //! fuel consumption. They were transcribed from public sources and cross-checked
-//! against TrashSim (<https://trashsim.universeview.be/> by Klaas), which
-//! publishes the same table. No TrashSim code is used or derived here; the combat
+//! against `TrashSim` (<https://trashsim.universeview.be/> by Klaas), which
+//! publishes the same table. No `TrashSim` code is used or derived here; the combat
 //! mechanics in `combat-core` are an independent reimplementation.
 //!
 //! This project is an unofficial fan tool and is not affiliated with, endorsed
@@ -18,6 +18,7 @@ use crate::{EntityStats, EntityType};
 use std::collections::HashMap;
 
 /// Load entity stats database (base stats with economic data)
+#[must_use]
 pub fn load_entity_stats() -> HashMap<EntityType, EntityStats> {
     let mut stats = HashMap::new();
 
@@ -220,7 +221,7 @@ fn espionage_probe() -> EntityStats {
         cost_crystal: 1000,
         cost_deuterium: 0,
         cargo_capacity: 0,
-        base_speed: 100000000,
+        base_speed: 100_000_000,
         fuel_consumption: 1,
     }
 }
@@ -271,7 +272,7 @@ fn destroyer() -> EntityStats {
         entity_type: 213,
         weapon: 2000,
         shield: 500,
-        armour: 110000,
+        armour: 110_000,
         rapid_fire_from: rf_map!(214 => 5, 218 => 3),
         rapid_fire_against: rf_map!(210 => 5, 212 => 5, 217 => 5, 402 => 10, 215 => 2),
         cost_metal: 60000,
@@ -286,9 +287,9 @@ fn destroyer() -> EntityStats {
 fn deathstar() -> EntityStats {
     EntityStats {
         entity_type: 214,
-        weapon: 200000,
+        weapon: 200_000,
         shield: 50000,
-        armour: 9000000,
+        armour: 9_000_000,
         rapid_fire_from: HashMap::new(),
         rapid_fire_against: rf_map!(
             202 => 250, 203 => 250, 204 => 200, 205 => 100, 206 => 33,
@@ -296,10 +297,10 @@ fn deathstar() -> EntityStats {
             211 => 25, 213 => 5, 401 => 200, 402 => 200, 403 => 100,
             404 => 50, 405 => 100, 215 => 15, 217 => 1250, 218 => 10, 219 => 30
         ),
-        cost_metal: 5000000,
-        cost_crystal: 4000000,
-        cost_deuterium: 1000000,
-        cargo_capacity: 1000000,
+        cost_metal: 5_000_000,
+        cost_crystal: 4_000_000,
+        cost_deuterium: 1_000_000,
+        cargo_capacity: 1_000_000,
         base_speed: 100,
         fuel_consumption: 1,
     }
@@ -351,7 +352,7 @@ fn reaper() -> EntityStats {
         entity_type: 218,
         weapon: 2800,
         shield: 700,
-        armour: 140000,
+        armour: 140_000,
         rapid_fire_from: rf_map!(405 => 2, 214 => 10),
         rapid_fire_against: rf_map!(210 => 5, 212 => 5, 217 => 5, 207 => 7, 211 => 4, 213 => 3),
         cost_metal: 85000,
@@ -472,7 +473,7 @@ fn plasma_turret() -> EntityStats {
         entity_type: 406,
         weapon: 3000,
         shield: 300,
-        armour: 100000,
+        armour: 100_000,
         rapid_fire_from: rf_map!(211 => 5),
         rapid_fire_against: HashMap::new(),
         cost_metal: 50000,
@@ -506,7 +507,7 @@ fn large_shield_dome() -> EntityStats {
         entity_type: 408,
         weapon: 1,
         shield: 10000,
-        armour: 100000,
+        armour: 100_000,
         rapid_fire_from: HashMap::new(),
         rapid_fire_against: HashMap::new(),
         cost_metal: 50000,

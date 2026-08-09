@@ -153,11 +153,19 @@ Tests are compiled optimised (`[profile.test] opt-level = 3`). The engine is a
 Monte Carlo loop, and an unoptimised one is roughly fourteen times slower — the
 suite takes seconds this way and minutes without it.
 
-Before pushing, the same three gates CI runs:
+Before pushing, the same gates CI runs:
 
 ```bash
-cargo fmt --check && cargo clippy --workspace --all-targets && cargo test --workspace
+cargo fmt --check \
+  && cargo clippy --workspace --all-targets \
+  && cargo deny check advisories bans licenses \
+  && cargo test --workspace
 ```
+
+`cargo deny` needs installing separately (`cargo install cargo-deny`); the rest
+ship with the toolchain. Formatting, lint policy and the supply-chain rules come
+from [maxi-quality](https://github.com/maximalcode/maxi-quality), which also runs
+Semgrep, Gitleaks and OSV-Scanner over every push.
 
 Work happens on `develop`; `main` is the reviewed branch.
 
