@@ -461,6 +461,7 @@ mod tests {
                     ..Default::default()
                 },
                 entities: attacker_fleet,
+                ..Default::default()
             },
             defender: PartyData {
                 technology: Technology {
@@ -470,6 +471,7 @@ mod tests {
                     ..Default::default()
                 },
                 entities: defender_fleet,
+                ..Default::default()
             },
             attacker_slots: None,
             defender_slots: None,

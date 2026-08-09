@@ -172,6 +172,7 @@ fn party(
     Ok(PartyData {
         technology,
         entities,
+        ..Default::default()
     })
 }
 

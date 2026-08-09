@@ -16,3 +16,10 @@ workspace = true
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# Dev only, so nothing is added to what this crate ships. Lifeform bonuses are
+# percentages that reach a stat through a chain of f32 multiplies, and
+# `assert_eq!` on one of those asserts bit equality rather than the number the
+# test means.
+[dev-dependencies]
+approx = { workspace = true }

@@ -21,10 +21,12 @@ fn test_hull_damage_persists_across_rounds() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet.clone(),
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet.clone(),
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,

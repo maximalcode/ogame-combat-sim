@@ -1,8 +1,10 @@
 //! Ship and defence statistics for `OGame`.
 //!
 //! These are base values. Weapons, shielding and armour technology scale them
-//! by +10% per level; player class, alliance class and lifeform research add
-//! further per-ship modifiers the engine does not yet apply — see the issues.
+//! by +10% per level, player and alliance classes are worth further levels of
+//! the same, and lifeform research adds a per-ship-type percentage of the base
+//! on top — all three are terms of one sum, applied in
+//! `ModifiedStats::calculate`.
 //!
 //! The numbers here are the game's own published unit stats — build costs,
 //! structural integrity, shield and weapon power, cargo capacity, base speed and

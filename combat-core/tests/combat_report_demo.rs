@@ -39,10 +39,12 @@ fn test_generate_detailed_combat_report() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet.clone(),
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet.clone(),
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,
@@ -309,10 +311,12 @@ fn test_json_serialization() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet,
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet,
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,

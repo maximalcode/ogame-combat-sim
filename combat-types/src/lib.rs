@@ -1,5 +1,6 @@
 pub mod combat_report;
 pub mod entities;
+pub mod lifeforms;
 pub mod names;
 
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,10 @@ use std::collections::HashMap;
 pub use combat_report::{
     BattleType, CombatReport, EconomicSummary, FleetSnapshot, HarvestInfo, MoonDestructionInfo,
     Participant, ResourceCost, RoundDetails, classify_battle_type,
+};
+pub use lifeforms::{
+    BuiltinLifeformTechs, LifeformBonus, LifeformBonuses, LifeformTech, LifeformTechId,
+    LifeformTechTable,
 };
 
 /// Entity type identifier (202-219 for ships, 401-408 for defenses, 502-503 for missiles)
@@ -136,7 +141,10 @@ const GENERAL_COMBAT_LEVELS: u8 = 2;
 /// The Warrior alliance class, +1 to the same three, from v8 (June 2021).
 const WARRIOR_COMBAT_LEVELS: u8 = 1;
 
-/// Player bonuses from classes, officers, and lifeforms
+/// Player bonuses from classes and officers.
+///
+/// Lifeform research is not here: it is per ship type rather than per player,
+/// and rides on [`PartyData::lifeform`].
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PlayerBonuses {
     #[serde(default)]
@@ -151,13 +159,10 @@ pub struct PlayerBonuses {
     /// than being turned into a stat bonus it is not.
     #[serde(default)]
     pub has_engineer: bool,
-    /// Lifeform research, as a percentage, and **read by nothing**. Lifeform
-    /// bonuses are per-ship-type and add to the base stat, so they are not
-    /// effective levels and cannot travel through
-    /// [`Technology::effective_levels`] — a separate mechanism with its own
-    /// issue. Kept so requests that carry it still round-trip.
-    #[serde(default)]
-    pub lifeform_bonus: u8, // percentage
+    // A `lifeform_bonus: u8` used to sit here, read by nothing. One flat
+    // percentage cannot describe a per-ship-type bonus, so it was widened into
+    // `PartyData::lifeform` rather than reinterpreted. A request still sending
+    // the old field is ignored, which is what it amounted to before.
 }
 
 impl PlayerBonuses {
@@ -226,6 +231,19 @@ pub type FleetComposition = HashMap<EntityType, u32>;
 pub struct PartyData {
     pub technology: Technology,
     pub entities: FleetComposition,
+    /// Lifeform research, as percentages added to the base stats of individual
+    /// ship types. It lives here rather than in [`PlayerBonuses`] for the same
+    /// reason `technology` does: it is a per-side stat modifier the stat cache
+    /// reads directly, and keeping the two in one struct is what stops a side
+    /// being fought with the other side's numbers. Per *party* rather than per
+    /// side is also the truer model — lifeform research is per player, and the
+    /// slots of an ACS attack are different players.
+    ///
+    /// Empty is the identity, and empty is what serde fills in, so a request
+    /// that names no lifeforms resolves exactly as it did before they were
+    /// modelled.
+    #[serde(default, skip_serializing_if = "LifeformBonuses::is_empty")]
+    pub lifeform: LifeformBonuses,
 }
 
 impl PartyData {
@@ -237,11 +255,15 @@ impl PartyData {
     /// bonuses are resolved here and do not survive the call, which is the
     /// whole point — nothing downstream can tell a granted level from a
     /// researched one.
+    ///
+    /// Lifeform bonuses ride along unchanged. No class scales them, and they
+    /// are already resolved percentages by the time a request carries them.
     #[must_use]
     pub fn at_effective_levels(&self, bonuses: Option<&PlayerBonuses>) -> Self {
         Self {
             technology: self.technology.effective_levels(bonuses),
             entities: self.entities.clone(),
+            lifeform: self.lifeform.clone(),
         }
     }
 }
@@ -543,6 +565,41 @@ mod tests {
         );
     }
 
+    /// The JSON body is the only route a caller has to lifeform bonuses today —
+    /// `POST /api/simulate` and `combat-cli --file` both take this shape — so
+    /// the shape is part of the feature and not an implementation detail. Keyed
+    /// by entity id, percentages, and every stat optional.
+    #[test]
+    fn a_party_reads_its_lifeform_bonuses_from_json() {
+        let party: PartyData = serde_json::from_str(
+            r#"{
+                "technology": { "weapon": 25 },
+                "entities": { "213": 100 },
+                "lifeform": { "213": { "weapon": 50.0 } }
+            }"#,
+        )
+        .expect("a party with lifeform bonuses should deserialize");
+
+        let bonus = party.lifeform.get(213);
+        assert!((bonus.weapon - 50.0).abs() < f32::EPSILON);
+        assert!(bonus.shield.abs() < f32::EPSILON, "unnamed stays at zero");
+        assert_eq!(
+            party.lifeform.get(204),
+            LifeformBonus::default(),
+            "an unnamed ship has no bonus",
+        );
+    }
+
+    /// A party with no lifeform research must serialize to exactly what it did
+    /// before lifeforms were modelled, or every stored request and every API
+    /// response gains an empty object.
+    #[test]
+    fn a_party_with_no_lifeform_research_does_not_mention_it() {
+        let json = serde_json::to_value(PartyData::default()).expect("serialize");
+
+        assert!(json.get("lifeform").is_none());
+    }
+
     /// `simulations: 0` has no meaningful reading — it produces no results to
     /// average and panics downstream — so the default must not be zero.
     #[test]
@@ -673,6 +730,7 @@ mod tests {
         let party = PartyData {
             technology: researched(10),
             entities: HashMap::from([(204, 100)]),
+            ..Default::default()
         };
 
         let boosted =
@@ -691,10 +749,12 @@ mod tests {
             attacker: PartyData {
                 technology: researched(10),
                 entities: HashMap::from([(204, 100)]),
+                ..Default::default()
             },
             defender: PartyData {
                 technology: researched(4),
                 entities: HashMap::from([(401, 50)]),
+                ..Default::default()
             },
             attacker_bonuses: Some(classes(PlayerClass::General, AllianceClass::None)),
             defender_bonuses: Some(classes(PlayerClass::None, AllianceClass::Warrior)),

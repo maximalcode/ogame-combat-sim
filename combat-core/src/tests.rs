@@ -15,10 +15,12 @@ fn create_request(
         attacker: PartyData {
             technology: attacker_tech,
             entities: attacker_fleet,
+            ..Default::default()
         },
         defender: PartyData {
             technology: defender_tech,
             entities: defender_fleet,
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,

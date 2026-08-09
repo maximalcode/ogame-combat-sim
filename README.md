@@ -20,6 +20,9 @@ The engine implements OGame's combat resolution as it actually behaves:
 - **Explosions** — hull-integrity roll after each round
 - **Player and alliance classes** — a General fights two effective technology
   levels above his research, a Warrior alliance one, and the two stack
+- **Lifeform research** — per-ship-type percentages added to hull, shield and
+  firepower in the same bracket as technology. A request carries the resolved
+  percentages; the library can work them out from researched levels for you
 - **Debris fields** — with configurable metal/crystal recovery, moon chance and
   the recycler count needed to collect
 - **Loot** — plunder at 50/75/100%, capped by surviving cargo capacity
@@ -37,7 +40,7 @@ What is **not** yet applied:
 
 | Missing | Since | Effect |
 | --- | --- | --- |
-| Lifeform research bonuses | v9 (2022) | Per-ship-type bonus to hull, shield and firepower. The largest gap by far. |
+| The lifeform empire model | v9 (2022) | Bonuses apply, but which planets, buildings and species experience produced them is the caller's arithmetic — the engine takes researched levels, or the resolved percentages |
 | Deuterium in debris | v9.2 (2023) | A per-universe option; only metal and crystal are produced here |
 | v13 instant-calc rule | v13 (2026) | Battles short-circuit above a 10,000× attack-power ratio |
 
@@ -52,11 +55,12 @@ Deathstar outright — is not implemented either. Sources split between 1-in-100
 and 1-in-10000 and none of them are official, so there is no number here worth
 committing to. It is recorded rather than quietly dropped.
 
-In practice: for a battle without lifeforms, results should be sound, classes
-included. For a developed 2026 account they will be optimistic or pessimistic
-depending on who holds the lifeform research, because the engine does not see
-it. All of this is tracked in the issues, and the combat-stat fixes are one
-additive term per stat rather than anything structural.
+In practice: results should be sound for a 2026 account, classes and lifeform
+research included, as long as the lifeform figures handed in are right. The
+lifeform table shipped here is hardcoded and goes stale whenever Gameforge
+rebalances; Gameforge publishes the live configuration per universe in
+`serverData.xml`, and reading it is a second implementation of the same
+interface rather than a rewrite. The rest is tracked in the issues.
 
 Stating this plainly matters more than the gaps do — every simulator in this
 space advertises accuracy and none of them publish what they get wrong.
@@ -108,6 +112,18 @@ curl -s -X POST localhost:3000/api/simulate -H 'Content-Type: application/json' 
   "use_rapid_fire": true,
   "simulations": 100
 }'
+```
+
+Lifeform research goes in beside a side's technology, as percentages added to
+the base stats of individual ship types — this attacker's Cruisers hit and
+survive 6% harder, and nothing else in the fleet moves:
+
+```json
+"attacker": {
+  "technology": {"weapon": 10, "shield": 10, "armour": 10},
+  "entities": {"206": 100},
+  "lifeform": {"206": {"weapon": 6.0, "shield": 6.0, "armour": 6.0}}
+}
 ```
 
 The response has two halves: `results` (win counts, average rounds, per-run

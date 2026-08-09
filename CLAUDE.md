@@ -14,11 +14,11 @@ a clap binary over the same library.
 stale but the code mostly is not: combat resolution — rounds, rapid fire, the
 bounce rule, shield regen, the explosion roll, `+10%`-per-level tech scaling,
 the whole ship stat table — is unchanged from v7 through the current v13. What
-is genuinely missing is every post-v7 system that feeds *stat modifiers* in:
-lifeform research (v9), deuterium debris (v9.2) and v13's instant-calc
-short-circuit. All tracked in the issues. Player classes (v7) and alliance
-classes (v8) used to be on that list and are modelled now — see
-`Technology::effective_levels`. Do not reintroduce a version number into the
+is genuinely missing is deuterium debris (v9.2) and v13's instant-calc
+short-circuit, both tracked in the issues. Player classes (v7), alliance
+classes (v8) and lifeform research (v9) used to be on that list and are
+modelled now — see `Technology::effective_levels` and
+`combat-types/src/lifeforms.rs`. Do not reintroduce a version number into the
 docs; state what is modelled instead.
 
 This repository was started fresh in August 2026. Its predecessor began life as
@@ -34,6 +34,7 @@ itself was carried over intact — it was never contaminated.
 | --- | --- |
 | `combat-types/src/lib.rs` | `CombatRequest`, `PartyData`, `Technology`, `CombatResults`, `SimulationResult` |
 | `combat-types/src/entities.rs` | `entity_stats()` / `load_entity_stats()` — the full ship and defence stat table |
+| `combat-types/src/lifeforms.rs` | `LifeformBonuses` (what combat reads) and `LifeformTechTable` / `BuiltinLifeformTechs` (which research is worth what) |
 | `combat-types/src/names.rs` | `ENTITY_INFO`, `resolve()`, `name_of()` — names and aliases, hand-written, kept in sync by test |
 | `combat-types/src/combat_report.rs` | `CombatReport`, debris, moon chance, recycler maths |
 | `combat-core/src/combat.rs` | One battle: rounds, shots, rapid fire, explosions. `MAX_ROUNDS = 6` |
@@ -97,14 +98,15 @@ cargo fmt --check \
   not a micro-optimisation: `downscaling_accuracy` simulates 20M ships without
   downscaling to prove the approximation holds, and it takes 135s at
   `opt-level = 0` versus 9.5s at 3. Do not remove that profile section.
-- **`universe_settings` is inert**, and so are two fields inside
-  `PlayerBonuses`. The settings block round-trips through JSON and no engine
-  code reads it. `has_engineer` and `lifeform_bonus` do the same, deliberately:
-  the Engineer's combat effect is on the post-battle defence *rebuild* roll and
-  this engine has no rebuild step to attach it to, and lifeform bonuses are
-  per-ship-type additions to a base stat rather than levels, so they cannot go
-  through the effective-levels seam. Both are tracked in the issues; neither is
-  an oversight to be fixed by inventing a number.
+- **`universe_settings` is inert**, and so is `PlayerBonuses::has_engineer`.
+  The settings block round-trips through JSON and no engine code reads it.
+  `has_engineer` does the same, deliberately: the Engineer's combat effect is on
+  the post-battle defence *rebuild* roll and this engine has no rebuild step to
+  attach it to. Both are tracked in the issues; neither is an oversight to be
+  fixed by inventing a number. `PlayerBonuses::lifeform_bonus` used to be a
+  third — it is gone, widened into `PartyData::lifeform`, because one flat
+  percentage cannot describe a per-ship-type bonus and reinterpreting it as a
+  global multiplier would have been wrong for every mixed fleet.
 - **Class bonuses are levels, resolved before combat starts.** A General is
   worth +2 Weapons/Shielding/Armour and a Warrior alliance +1, they add, and +3
   is the ceiling. `Technology::effective_levels` folds a side's
@@ -119,6 +121,33 @@ cargo fmt --check \
   `ModifiedStats::calculate`, because `+10%` per level is applied once to the
   total, and a General with Weapons 10 must compute as Weapons 12 rather than
   as Weapons 10 times something.
+- **Lifeform bonuses are percentages, and they *are* in `ModifiedStats::
+  calculate`.** They are the other kind of stat modifier and take the other
+  seam, because a lifeform research names one ship type and cannot be expressed
+  as levels that apply to a whole fleet. So `PartyData` carries a
+  `LifeformBonuses` beside its `Technology`, `StatsCache::new` takes the whole
+  party rather than its levels, and the two terms are added inside one
+  expression: `base * (1 + 0.10*level + lifeform)`. Additive is the game's rule
+  and is the point — a Destroyer at Weapons 25 with `+50%` fires at 8000, not
+  10,500, and computing it as two multiplications gets that wrong. `cargo` and
+  `speed` are in `LifeformBonus` and read by nothing: every lifeform research
+  moves all five stats at one rate, so carrying them costs nothing and leaving
+  them out would make the flight model a schema change rather than a reader.
+- **The lifeform table is hardcoded behind a trait, on purpose.**
+  `BuiltinLifeformTechs` is the only implementation of `LifeformTechTable`
+  today. Gameforge publishes the whole per-universe configuration in
+  `serverData.xml`'s `<lifeformSettings>`, so a loader for it is the intended
+  second implementation — add a source, do not rewrite the seam. Three
+  researches named like combat techs (`12217` Rune Shields, `13217`
+  Experimental Weapons Technology, `14217` Psionic Shield Matrix) reduce
+  research cost and time and grant **zero** combat power; a test asserts they
+  stay out of the table.
+- **A report says nothing about lifeforms.** `Participant` carries effective
+  technology levels and no per-ship-type bonuses, so a battle decided by
+  lifeform research reads in the report as though it were not. There is nowhere
+  in the report shape to put a per-ship table, and inventing one was out of
+  scope; the CLI has no flag for lifeforms either, so the JSON body is the only
+  way in today.
 - **A report states effective levels, not researched ones.** `Participant.
   technology` in a `CombatReport` — and so the CLI header and the `report` half
   of the `/api/simulate` response — is what the side actually fought at. A
@@ -141,6 +170,13 @@ cargo fmt --check \
 - **clap renders `///` into `--help`.** A doc comment on a field in
   `combat-cli/src/cli.rs` is user-facing text, not a note to the next reader.
   Internal rationale goes in a `//` comment above it.
+- **`combat-core/tests/common/mod.rs` is the shared battle fixture.** 250 Light
+  Fighters against one Large Shield Dome, decided entirely by whether a shot
+  clears 1% of a 10,000 shield — which makes it a single-number probe for any
+  stat modifier, and free of randomness so a run of five simulations all agree.
+  `class_bonuses.rs` and `lifeform_bonuses.rs` both use it and each keeps its
+  own `resolve`. A third mechanism that modifies stats should join them rather
+  than copy the fixture again.
 - **The entity name table is hand-written.** `EntityStats` has no name field, so
   `combat-types/src/names.rs` carries names and aliases separately. Two tests
   assert the two tables cover exactly the same ids in both directions; add a
