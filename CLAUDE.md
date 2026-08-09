@@ -48,9 +48,10 @@ let report = ReportBuilder::new().build_summary_report(&request, &results);
 ```
 
 `CombatRequest` deserializes from exactly the JSON `POST /api/simulate`
-accepts, so the easiest way to build one in a test or tool is
-`serde_json::from_str`. It has no `Default` impl, so a struct literal must name
-every field — prefer the JSON route.
+accepts, so `serde_json::from_str` is the easiest way to build one from a
+literal. In Rust code, `CombatRequest { attacker, defender, ..Default::default() }`
+works too — the `Default` impl is hand-written so every field matches what
+serde would fill in, and a test asserts that rather than trusting it.
 
 `Simulator::new()` installs a **global** rayon thread pool (75% of cores). A
 second call silently does nothing, but it is process-wide state.

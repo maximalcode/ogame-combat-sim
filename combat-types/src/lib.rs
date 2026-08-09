@@ -88,15 +88,18 @@ fn default_debris_fleet() -> u8 {
     30
 }
 
+/// Calls the same functions serde does, for the reason spelled out on
+/// `impl Default for CombatRequest`. These values used to be repeated as
+/// literals here; they agreed with the serde defaults, but nothing made them.
 impl Default for UniverseSettings {
     fn default() -> Self {
         Self {
-            galaxies: 9,
-            systems: 499,
-            donut_galaxy: true,
-            donut_systems: true,
-            fleet_speed: 1,
-            debris_fleet: 30,
+            galaxies: default_galaxies(),
+            systems: default_systems(),
+            donut_galaxy: default_true(),
+            donut_systems: default_true(),
+            fleet_speed: default_one(),
+            debris_fleet: default_debris_fleet(),
             debris_defence: 0,
             deuterium_save_factor: 0,
         }
@@ -142,7 +145,7 @@ pub struct PlayerBonuses {
 pub type FleetComposition = HashMap<EntityType, u32>;
 
 /// Combat party (attacker or defender)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PartyData {
     pub technology: Technology,
     pub entities: FleetComposition,
@@ -246,6 +249,45 @@ fn default_plunder_percentage() -> u8 {
     50 // 50% default
 }
 
+/// Written by hand rather than derived, and the reason is a real bug it avoids.
+///
+/// Several fields carry serde defaults that are not the type's zero value —
+/// `debris_percentage` defaults to 30.0 and `plunder_percentage` to 50. A
+/// derived `Default` would set them to `0.0` and `0`, so
+/// `CombatRequest { ..Default::default() }` and the equivalent JSON request
+/// would quietly produce different debris fields and different loot. Every
+/// defaulted field below calls the same function serde calls, so the two
+/// cannot drift apart; `default_matches_deserializing_a_minimal_request`
+/// asserts it rather than trusting this comment.
+///
+/// The four fields serde requires — both parties, `use_rapid_fire` and
+/// `simulations` — have no serde default to agree with, so the values here are
+/// a judgement call: empty fleets, rapid fire on as it is in-game, and a
+/// hundred simulations, which is enough for a stable distribution and small
+/// enough to be interactive. `simulations` deliberately is not `0`: a request
+/// that runs no battles has nothing to average and panics in the report
+/// builder.
+impl Default for CombatRequest {
+    fn default() -> Self {
+        Self {
+            attacker: PartyData::default(),
+            defender: PartyData::default(),
+            attacker_slots: None,
+            defender_slots: None,
+            planet_resources: None,
+            debris_percentage: default_debris_percentage(),
+            use_rapid_fire: true,
+            simulations: 100,
+            enable_downscaling: None,
+            enable_round_compositions: None,
+            universe_settings: None,
+            attacker_bonuses: None,
+            defender_bonuses: None,
+            plunder_percentage: default_plunder_percentage(),
+        }
+    }
+}
+
 /// Combat outcome for a single simulation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CombatOutcome {
@@ -344,5 +386,55 @@ impl CombatResults {
     #[must_use]
     pub fn draw_rate(&self) -> f64 {
         f64::from(self.draws) / f64::from(self.simulations)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The property that makes the hand-written `Default` worth having: a
+    /// request built with `..Default::default()` and the same request sent as
+    /// minimal JSON must be the same request. Comparing the serialised forms
+    /// checks every field at once, so a field added later without a matching
+    /// `Default` entry fails here rather than silently changing a battle.
+    #[test]
+    fn default_matches_deserializing_a_minimal_request() {
+        // Only the four fields serde genuinely requires. Everything else is
+        // left out so serde has to fill it in.
+        let from_json: CombatRequest = serde_json::from_str(
+            r#"{
+                "attacker":  { "technology": {}, "entities": {} },
+                "defender":  { "technology": {}, "entities": {} },
+                "use_rapid_fire": true,
+                "simulations": 100
+            }"#,
+        )
+        .expect("minimal request should deserialize");
+
+        let from_default = CombatRequest {
+            use_rapid_fire: true,
+            simulations: 100,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(&from_json).expect("serialize"),
+            serde_json::to_value(&from_default).expect("serialize"),
+        );
+    }
+
+    /// `simulations: 0` has no meaningful reading — it produces no results to
+    /// average and panics downstream — so the default must not be zero.
+    #[test]
+    fn default_runs_a_nonzero_number_of_simulations() {
+        assert!(CombatRequest::default().simulations > 0);
+    }
+
+    #[test]
+    fn party_data_defaults_to_an_empty_fleet_at_zero_tech() {
+        let party = PartyData::default();
+        assert!(party.entities.is_empty());
+        assert_eq!(party.technology, Technology::default());
     }
 }
