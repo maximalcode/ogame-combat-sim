@@ -202,7 +202,9 @@ fn write_fleet_changes(out: &mut String, report: &CombatReport) {
 ///
 /// The plunder section is skipped when there is none, which is the common case:
 /// loot needs `--planet`, and a battle between two fleets in space has no planet
-/// to take anything from.
+/// to take anything from. Deuterium debris is skipped on the same grounds — it
+/// is a per-universe option most universes leave off, so a permanent `0` row
+/// would be noise everywhere it is not enabled.
 fn write_economics(out: &mut String, economics: &EconomicSummary) {
     let _ = writeln!(out, "\nDebris field (average)");
     row(out, "  ", "Metal", &thousands(economics.debris_field.metal));
@@ -212,6 +214,14 @@ fn write_economics(out: &mut String, economics: &EconomicSummary) {
         "Crystal",
         &thousands(economics.debris_field.crystal),
     );
+    if economics.debris_field.deuterium > 0 {
+        row(
+            out,
+            "  ",
+            "Deuterium",
+            &thousands(economics.debris_field.deuterium),
+        );
+    }
     let _ = writeln!(
         out,
         "  {:<24}{:>11.1}%",

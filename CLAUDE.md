@@ -14,11 +14,12 @@ a clap binary over the same library.
 stale but the code mostly is not: combat resolution — rounds, rapid fire, the
 bounce rule, shield regen, the explosion roll, `+10%`-per-level tech scaling,
 the whole ship stat table — is unchanged from v7 through the current v13. What
-is genuinely missing is deuterium debris (v9.2) and v13's instant-calc
-short-circuit, both tracked in the issues. Player classes (v7), alliance
-classes (v8) and lifeform research (v9) used to be on that list and are
-modelled now — see `Technology::effective_levels` and
-`combat-types/src/lifeforms.rs`. Do not reintroduce a version number into the
+is genuinely missing is v13's instant-calc short-circuit, tracked in the issues.
+Everything else that fed *stat modifiers* in has since been modelled: player
+classes (v7), alliance classes (v8) and lifeform research (v9) — see
+`Technology::effective_levels` and `combat-types/src/lifeforms.rs` — and
+per-universe debris rules, deuterium debris (v9.2) included, see
+`CombatRequest::debris_settings`. Do not reintroduce a version number into the
 docs; state what is modelled instead.
 
 This repository was started fresh in August 2026. Its predecessor began life as
@@ -32,7 +33,7 @@ itself was carried over intact — it was never contaminated.
 
 | Path | Contents |
 | --- | --- |
-| `combat-types/src/lib.rs` | `CombatRequest`, `PartyData`, `Technology`, `CombatResults`, `SimulationResult` |
+| `combat-types/src/lib.rs` | `CombatRequest`, `PartyData`, `Technology`, `CombatResults`, `SimulationResult`, `UniverseSettings`, `DebrisSettings` |
 | `combat-types/src/entities.rs` | `entity_stats()` / `load_entity_stats()` — the full ship and defence stat table |
 | `combat-types/src/lifeforms.rs` | `LifeformBonuses` (what combat reads) and `LifeformTechTable` / `BuiltinLifeformTechs` (which research is worth what) |
 | `combat-types/src/names.rs` | `ENTITY_INFO`, `resolve()`, `name_of()` — names and aliases, hand-written, kept in sync by test |
@@ -98,15 +99,17 @@ cargo fmt --check \
   not a micro-optimisation: `downscaling_accuracy` simulates 20M ships without
   downscaling to prove the approximation holds, and it takes 135s at
   `opt-level = 0` versus 9.5s at 3. Do not remove that profile section.
-- **`universe_settings` is inert**, and so is `PlayerBonuses::has_engineer`.
-  The settings block round-trips through JSON and no engine code reads it.
-  `has_engineer` does the same, deliberately: the Engineer's combat effect is on
-  the post-battle defence *rebuild* roll and this engine has no rebuild step to
-  attach it to. Both are tracked in the issues; neither is an oversight to be
-  fixed by inventing a number. `PlayerBonuses::lifeform_bonus` used to be a
-  third — it is gone, widened into `PartyData::lifeform`, because one flat
-  percentage cannot describe a per-ship-type bonus and reinterpreting it as a
-  global multiplier would have been wrong for every mixed fleet.
+- **Some fields still round-trip and are read by nothing.**
+  `PlayerBonuses::has_engineer` is one, deliberately: the Engineer's combat
+  effect is on the post-battle defence *rebuild* roll and this engine has no
+  rebuild step to attach it to. `universe_settings` is half of another — its
+  debris fields are read now, but `galaxies`, `systems`, the two donut flags,
+  `fleet_speed` and `deuterium_save_factor` are inert because nothing here
+  computes flight or fuel yet, which is issue #14. Both are tracked; neither is
+  an oversight to be fixed by inventing a number. `PlayerBonuses::lifeform_bonus`
+  used to be a third — it is gone, widened into `PartyData::lifeform`, because
+  one flat percentage cannot describe a per-ship-type bonus and reinterpreting it
+  as a global multiplier would have been wrong for every mixed fleet.
 - **Class bonuses are levels, resolved before combat starts.** A General is
   worth +2 Weapons/Shielding/Armour and a Warrior alliance +1, they add, and +3
   is the ceiling. `Technology::effective_levels` folds a side's
@@ -161,6 +164,25 @@ cargo fmt --check \
   Engineer officer: see the inert-fields bullet above. Guessing either would
   put a fabricated constant into a simulator whose whole selling point is
   stating what it gets wrong.
+- **Debris rules come from two places and one wins.** A request can set
+  `debris_percentage` at the top level *and* describe debris inside
+  `universe_settings`. `CombatRequest::debris_settings` settles it:
+  **`universe_settings` wins whenever it is present**, and the top-level field
+  is the fallback for requests without one. The fallback reports fleet debris
+  only — no defence debris, no deuterium — which is exactly what the engine did
+  before any of this was read, so a request with `universe_settings: null`
+  produces the wreck field it always did. Two tests in `combat-types/src/lib.rs`
+  pin both halves of the rule; do not "simplify" it to one source. The sharp
+  edge: `UniverseSettings` defaults every field, so a block that sets only
+  `galaxies` still wins, and its `debris_fleet` default of 30 quietly overrides
+  a `debris_percentage` of 70. `CombatResults::debris_settings` reports what was
+  actually used, which is the fastest way to see it happen.
+- **`DebrisField::total()` counts deuterium**, and that total feeds moon chance,
+  the recycler count and both profit figures in
+  `combat-types/src/combat_report.rs`. So enabling deuterium debris on a
+  universe moves the moon roll and the harvest estimate too. That is correct —
+  recyclers do collect it — but it means a change to the debris maths is never
+  only a change to the debris maths.
 - **`/api/simulate` overrides the request.** It caps `simulations` at
   `MAX_SIMULATIONS` (default 1000) and forces `enable_downscaling = None`.
   Both are HTTP-layer server protection; the library has no limits. **The CLI

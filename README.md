@@ -23,8 +23,9 @@ The engine implements OGame's combat resolution as it actually behaves:
 - **Lifeform research** — per-ship-type percentages added to hull, shield and
   firepower in the same bracket as technology. A request carries the resolved
   percentages; the library can work them out from researched levels for you
-- **Debris fields** — with configurable metal/crystal recovery, moon chance and
-  the recycler count needed to collect
+- **Debris fields** — per-universe recovery rates, set separately for ships and
+  defences, with deuterium debris where the universe enables it, plus moon
+  chance and the recycler count needed to collect
 - **Loot** — plunder at 50/75/100%, capped by surviving cargo capacity
 - **Downscaling** — battles above ten million ships are simulated at reduced
   scale and extrapolated, so a fleet of any size resolves in reasonable time
@@ -41,7 +42,6 @@ What is **not** yet applied:
 | Missing | Since | Effect |
 | --- | --- | --- |
 | The lifeform empire model | v9 (2022) | Bonuses apply, but which planets, buildings and species experience produced them is the caller's arithmetic — the engine takes researched levels, or the resolved percentages |
-| Deuterium in debris | v9.2 (2023) | A per-universe option; only metal and crystal are produced here |
 | v13 instant-calc rule | v13 (2026) | Battles short-circuit above a 10,000× attack-power ratio |
 
 One thing outside combat itself is missing too, and it changes what an attack

@@ -6,7 +6,9 @@ use crate::scaling::{
     upscale_slot_results,
 };
 use combat_types::entities::entity_stats;
-use combat_types::{CombatRequest, CombatResults, PartyData, PlanetResources, SimulationResult};
+use combat_types::{
+    CombatRequest, CombatResults, DebrisSettings, PartyData, PlanetResources, SimulationResult,
+};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rayon::prelude::*;
@@ -42,7 +44,7 @@ impl Simulator {
         defender_slots: &[(String, PartyData)],
         use_rapid_fire: bool,
         planet_resources: Option<&PlanetResources>,
-        debris_percentage: f32,
+        debris_settings: DebrisSettings,
         collect_compositions: bool,
     ) -> SimulationResult {
         let mut rng = SmallRng::from_os_rng();
@@ -60,7 +62,7 @@ impl Simulator {
             &single.attacker_losses,
             &single.defender_losses,
             entity_db,
-            debris_percentage,
+            debris_settings,
         );
 
         let loot = if let Some(resources) = planet_resources {
@@ -110,7 +112,7 @@ impl Simulator {
         defender: &PartyData,
         use_rapid_fire: bool,
         planet_resources: Option<&PlanetResources>,
-        debris_percentage: f32,
+        debris_settings: DebrisSettings,
         collect_compositions: bool,
     ) -> SimulationResult {
         // Use SmallRng for 3x faster RNG (non-cryptographic but sufficient for simulations)
@@ -131,7 +133,7 @@ impl Simulator {
             &result.attacker_losses,
             &result.defender_losses,
             entity_db,
-            debris_percentage,
+            debris_settings,
         );
 
         // Calculate loot if planet resources are provided
@@ -190,9 +192,15 @@ impl Simulator {
         // of it reaches combat. Everything downstream — downscaling, the round
         // loop, the stat cache — goes on seeing a plain `PartyData` and never
         // learns that classes exist. Per side, because the request carries one
-        // bonus block per side and they are free to differ.
+        // bonus block per side and they are free to differ. Lifeform bonuses
+        // travel on the `PartyData` itself and need no resolution step.
         let attacker = request.effective_attacker();
         let defender = request.effective_defender();
+
+        // Resolved once rather than per battle: the precedence between
+        // `universe_settings` and `debris_percentage` cannot vary within a run,
+        // and every simulation must be scored under the same rules.
+        let debris_settings = request.debris_settings();
 
         // Check if we should downscale for large battles
         let downscale_factor = match request.enable_downscaling {
@@ -345,7 +353,7 @@ impl Simulator {
                             d_s_arc.as_slice(),
                             request.use_rapid_fire,
                             request.planet_resources.as_ref(),
-                            request.debris_percentage,
+                            debris_settings,
                             collect,
                         )
                     } else {
@@ -354,7 +362,7 @@ impl Simulator {
                             d_o_arc.as_slice(),
                             request.use_rapid_fire,
                             request.planet_resources.as_ref(),
-                            request.debris_percentage,
+                            debris_settings,
                             collect,
                         )
                     }
@@ -364,7 +372,7 @@ impl Simulator {
                         &defender_data,
                         request.use_rapid_fire,
                         request.planet_resources.as_ref(),
-                        request.debris_percentage,
+                        debris_settings,
                         collect,
                     )
                 };
@@ -421,6 +429,7 @@ impl Simulator {
 
         // Aggregate results
         let mut results = CombatResults::new(request.simulations);
+        results.debris_settings = debris_settings;
         let mut total_rounds = 0u64;
 
         for result in simulation_results {
