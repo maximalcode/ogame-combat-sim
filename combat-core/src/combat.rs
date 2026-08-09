@@ -386,14 +386,16 @@ fn apply_damage_fast(weapon_power: u32, target: &mut Entity, rng: &mut impl Rng)
 
 /// Main combat simulation
 pub struct Combat {
-    entity_db: HashMap<EntityType, EntityStats>,
+    /// Borrowed from the process-wide table rather than owned — `Combat` only
+    /// ever reads it, and a `Simulator` is cloned into every rayon worker.
+    entity_db: &'static HashMap<EntityType, EntityStats>,
 }
 
 impl Combat {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entity_db: combat_types::entities::load_entity_stats(),
+            entity_db: combat_types::entities::entity_stats(),
         }
     }
 
@@ -406,12 +408,12 @@ impl Combat {
         rng: &mut impl Rng,
     ) -> SingleCombatResult {
         // Precompute stats
-        let attacker_stats = StatsCache::new(&self.entity_db, &attacker_data.technology);
-        let defender_stats = StatsCache::new(&self.entity_db, &defender_data.technology);
+        let attacker_stats = StatsCache::new(self.entity_db, &attacker_data.technology);
+        let defender_stats = StatsCache::new(self.entity_db, &defender_data.technology);
 
         // Create parties
-        let mut attackers = Party::new(attacker_data, &self.entity_db, &attacker_stats);
-        let mut defenders = Party::new(defender_data, &self.entity_db, &defender_stats);
+        let mut attackers = Party::new(attacker_data, self.entity_db, &attacker_stats);
+        let mut defenders = Party::new(defender_data, self.entity_db, &defender_stats);
 
         let mut round = 0u8;
         let mut round_details: Vec<RoundDetails> = Vec::new();
@@ -562,7 +564,7 @@ impl Combat {
 
         // Helper to extend party from a slot
         let extend_party = |party: &mut Party, slot_index: usize, data: &PartyData| {
-            let stats_cache = StatsCache::new(&self.entity_db, &data.technology);
+            let stats_cache = StatsCache::new(self.entity_db, &data.technology);
             let slot_id = (slot_index + 1) as u8;
             let mut original: FleetComposition = HashMap::new();
             for (&entity_type, &count) in &data.entities {

@@ -1,4 +1,4 @@
-use combat_types::entities::load_entity_stats;
+use combat_types::entities::entity_stats;
 /// Build comprehensive combat reports from simulation results
 use combat_types::{
     CombatOutcome, CombatReport, CombatRequest, CombatResults, DebrisField, EconomicSummary,
@@ -9,14 +9,15 @@ use std::collections::HashMap;
 
 /// Builder for creating detailed combat reports
 pub struct ReportBuilder {
-    entity_db: HashMap<EntityType, EntityStats>,
+    /// Read-only, so borrowed from the process-wide table.
+    entity_db: &'static HashMap<EntityType, EntityStats>,
 }
 
 impl ReportBuilder {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entity_db: load_entity_stats(),
+            entity_db: entity_stats(),
         }
     }
 
