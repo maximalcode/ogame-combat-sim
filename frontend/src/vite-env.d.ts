@@ -6,6 +6,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
+  // PROTOTYPE — throwaway branch only: the switcher gates on dev builds.
+  readonly DEV: boolean;
 }
 
 interface ImportMeta {
