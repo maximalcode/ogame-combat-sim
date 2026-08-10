@@ -9,9 +9,11 @@
 
 const raw = import.meta.env.VITE_API_BASE_URL;
 
-// Trailing slashes are stripped by walking backwards rather than with a `/+$/`
-// regex: the regex form backtracks super-linearly on a long run of slashes, and
-// a base URL is attacker-influenced often enough not to hand it that shape.
+// Stripped by walking backwards rather than with a `/\/+$/` regex. That regex
+// backtracks super-linearly on a long run of slashes, which the lint baseline
+// rejects outright. This value is build-time configuration rather than user
+// input, so the practical risk was low — but the loop is linear, needs no
+// argument about who controls the input, and is no harder to read.
 function withoutTrailingSlashes(value: string): string {
   let end = value.length;
   while (end > 0 && value[end - 1] === "/") end -= 1;
