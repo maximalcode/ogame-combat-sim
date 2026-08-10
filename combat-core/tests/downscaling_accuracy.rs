@@ -23,6 +23,7 @@ fn create_party(ship_type: u16, count: u32, tech: Technology) -> PartyData {
     PartyData {
         technology: tech,
         entities: create_fleet(ship_type, count),
+        ..Default::default()
     }
 }
 

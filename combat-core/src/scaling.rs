@@ -219,6 +219,10 @@ pub fn downscale_party(party: &PartyData, factor: usize) -> PartyData {
     PartyData {
         technology: party.technology,
         entities: downscale_fleet(&party.entities, factor),
+        // Downscaling divides ship counts. Stat modifiers are per ship and do
+        // not divide with them, so both technology and lifeform bonuses come
+        // through untouched — a tenth of the fleet still shoots at full power.
+        lifeform: party.lifeform.clone(),
     }
 }
 
@@ -367,7 +371,7 @@ fn upscale_fleet(fleet: &FleetComposition, factor: usize) -> FleetComposition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use combat_types::Technology;
+    use combat_types::{LifeformBonus, LifeformBonuses, Technology};
     use std::collections::HashMap;
 
     #[test]
@@ -394,6 +398,7 @@ mod tests {
         let small_party = PartyData {
             technology: tech,
             entities: small_fleet,
+            ..Default::default()
         };
 
         assert!(!should_downscale(&small_party, &small_party));
@@ -404,6 +409,7 @@ mod tests {
         let large_party = PartyData {
             technology: tech,
             entities: large_fleet,
+            ..Default::default()
         };
 
         assert!(should_downscale(&large_party, &large_party));
@@ -430,6 +436,27 @@ mod tests {
 
         // Should keep at least 1
         assert_eq!(downscaled.get(&204), Some(&1));
+    }
+
+    /// Downscaling divides ship counts, and a stat modifier is per ship. A
+    /// tenth of the fleet has to shoot at full power, or every battle over ten
+    /// million ships silently loses its lifeform research.
+    #[test]
+    fn downscaling_a_party_keeps_its_stat_modifiers() {
+        let party = PartyData {
+            technology: Technology {
+                weapon: 12,
+                ..Default::default()
+            },
+            entities: HashMap::from([(204, 20_000_000)]),
+            lifeform: LifeformBonuses::from_iter([(204, LifeformBonus::uniform(25.0))]),
+        };
+
+        let downscaled = downscale_party(&party, 10);
+
+        assert_eq!(downscaled.entities.get(&204), Some(&2_000_000));
+        assert_eq!(downscaled.technology, party.technology);
+        assert_eq!(downscaled.lifeform, party.lifeform);
     }
 
     #[test]
@@ -502,6 +529,7 @@ mod tests {
         let party1 = PartyData {
             technology: tech,
             entities: fleet1,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party1, &party1), 1);
 
@@ -511,6 +539,7 @@ mod tests {
         let party2 = PartyData {
             technology: tech,
             entities: fleet2,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party2, &party2), 10);
 
@@ -520,6 +549,7 @@ mod tests {
         let party3 = PartyData {
             technology: tech,
             entities: fleet3,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party3, &party3), 50);
 
@@ -529,6 +559,7 @@ mod tests {
         let party4 = PartyData {
             technology: tech,
             entities: fleet4,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party4, &party4), 100);
 
@@ -538,6 +569,7 @@ mod tests {
         let party5 = PartyData {
             technology: tech,
             entities: fleet5,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party5, &party5), 10);
     }

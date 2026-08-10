@@ -48,12 +48,17 @@ impl ReportBuilder {
                 .as_secs()
         });
 
-        // Create participant info (using placeholder data - you can customize)
+        // Names and coordinates are placeholders — this engine has no player
+        // identities to fill them from. The levels are not: they are the ones
+        // each side fought at, classes included, taken from the same
+        // `effective_*` methods the simulator used. A report showing the
+        // researched levels would disagree with the battle it describes, and a
+        // General's two levels would look like they had been ignored.
         let attacker = Participant {
             name: "Attacker".to_string(),
             player_id: None,
             coordinates: None,
-            technology: request.attacker.technology,
+            technology: request.effective_attacker().technology,
             alliance: None,
         };
 
@@ -61,7 +66,7 @@ impl ReportBuilder {
             name: "Defender".to_string(),
             player_id: None,
             coordinates: None,
-            technology: request.defender.technology,
+            technology: request.effective_defender().technology,
             alliance: None,
         };
 

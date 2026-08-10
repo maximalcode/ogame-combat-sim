@@ -172,6 +172,7 @@ fn party(
     Ok(PartyData {
         technology,
         entities,
+        ..Default::default()
     })
 }
 
@@ -202,13 +203,17 @@ pub fn build_request(args: &SimArgs) -> Result<CombatRequest, String> {
         .map_err(|e| format!("--planet: {e}"))?;
 
     // `..Default::default()` covers the fields with no flag — the slot lists,
-    // the round-composition switch, the two bonus blocks no engine code reads
-    // yet, and `universe_settings`. Leaving that one `None` is what makes
-    // `--debris` mean anything: it is the fallback the engine falls back *to*,
-    // so a shorthand battle is scored under standard-universe debris rules.
-    // Reach for `--file` to describe a universe. It is only safe because
-    // `CombatRequest`'s `Default` is hand-written to agree with the serde
-    // defaults; a derived one would set `debris_percentage` to 0.0 here.
+    // the round-composition switch, the two bonus blocks, and
+    // `universe_settings`. Every one of them is read by the engine, so what is
+    // left out here is a decision rather than an omission: no bonus block
+    // fights a classless battle, and leaving `universe_settings` `None` is what
+    // makes `--debris` mean anything, because it is the fallback the engine
+    // falls back *to*. A shorthand battle is therefore a classless one under
+    // standard-universe debris rules; `--file` is how a General, a Warrior
+    // alliance, a universe or a side's lifeform research gets described. It is
+    // only safe because `CombatRequest`'s `Default` is hand-written to agree
+    // with the serde defaults; a derived one would set `debris_percentage` to
+    // 0.0 here.
     Ok(CombatRequest {
         attacker,
         defender,

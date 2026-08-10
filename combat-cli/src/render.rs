@@ -124,16 +124,20 @@ pub fn render_report(
 
     let _ = writeln!(out, "{}\n", battle_type_label(&report.battle_type));
 
+    // The levels come from the report rather than the request because the
+    // report carries the effective ones: a General fights three levels above
+    // his research in a Warrior alliance, and printing what he researched
+    // would not describe the battle underneath it.
     let _ = writeln!(
         out,
         "Attacker — weapon/shield/armour {}",
-        tech_summary(&request.attacker.technology)
+        tech_summary(&report.attacker.technology)
     );
     write_fleet(&mut out, &request.attacker.entities, "  ");
     let _ = writeln!(
         out,
         "\nDefender — weapon/shield/armour {}",
-        tech_summary(&request.defender.technology)
+        tech_summary(&report.defender.technology)
     );
     write_fleet(&mut out, &request.defender.entities, "  ");
 

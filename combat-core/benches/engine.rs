@@ -65,10 +65,12 @@ fn request(
         attacker: PartyData {
             technology: tech(),
             entities: attacker,
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech(),
             entities: defender,
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,

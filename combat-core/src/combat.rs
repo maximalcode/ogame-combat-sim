@@ -42,6 +42,7 @@ mod tests {
                 ..Default::default()
             },
             entities: a_entities,
+            ..Default::default()
         };
         let defender = PartyData {
             technology: Technology {
@@ -51,6 +52,7 @@ mod tests {
                 ..Default::default()
             },
             entities: d_entities,
+            ..Default::default()
         };
 
         // Use identical RNG seeds for the two runs
@@ -408,8 +410,8 @@ impl Combat {
         rng: &mut impl Rng,
     ) -> SingleCombatResult {
         // Precompute stats
-        let attacker_stats = StatsCache::new(self.entity_db, &attacker_data.technology);
-        let defender_stats = StatsCache::new(self.entity_db, &defender_data.technology);
+        let attacker_stats = StatsCache::new(self.entity_db, attacker_data);
+        let defender_stats = StatsCache::new(self.entity_db, defender_data);
 
         // Create parties
         let mut attackers = Party::new(attacker_data, self.entity_db, &attacker_stats);
@@ -564,7 +566,7 @@ impl Combat {
 
         // Helper to extend party from a slot
         let extend_party = |party: &mut Party, slot_index: usize, data: &PartyData| {
-            let stats_cache = StatsCache::new(self.entity_db, &data.technology);
+            let stats_cache = StatsCache::new(self.entity_db, data);
             let slot_id = (slot_index + 1) as u8;
             let mut original: FleetComposition = HashMap::new();
             for (&entity_type, &count) in &data.entities {
