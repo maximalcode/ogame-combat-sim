@@ -222,6 +222,9 @@ cargo fmt --check \
 
 ## Conventions
 
+- **`AGENTS.md` is a symlink to this file**, so tools that look for that name
+  read exactly these notes and there is one copy to keep true. Edit `CLAUDE.md`;
+  do not replace the symlink with a second document that will drift.
 - Branches: work on `develop`, merge to `main` when reviewed.
 - Toolchain pinned in CI; `-Dwarnings` is applied there rather than in the
   manifest, so local `cargo check` warns instead of failing.
