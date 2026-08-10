@@ -26,7 +26,7 @@ export type ResultsState =
   | { kind: "ok" };
 
 interface ResultsPanelProps {
-  state: ResultsState;
+  readonly state: ResultsState;
 }
 
 export function ResultsPanel({ state }: ResultsPanelProps) {

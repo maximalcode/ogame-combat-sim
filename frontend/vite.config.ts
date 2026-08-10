@@ -7,7 +7,7 @@ import { fileURLToPath, URL } from "node:url";
 // configured base URL to the client through `import.meta.env.VITE_API_BASE_URL`
 // (see src/config.ts); the dev server also proxies `/api` there so a frontend
 // with no env set still talks to a locally running API without CORS setup.
-const apiBaseUrl = process.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+const apiBaseUrl = process.env["VITE_API_BASE_URL"] ?? "http://localhost:3000";
 
 export default defineConfig({
   plugins: [react()],

@@ -74,6 +74,14 @@ cargo run -p combat-cli -- entities
 cargo bench --bench engine        # criterion; first compile is slow, see below
 ```
 
+The web UI is a separate npm project under `frontend/`:
+
+```bash
+cd frontend && npm install
+npm run dev                       # :5173, proxies /api to :3000
+npm run lint                      # the TypeScript CI gate — see below
+```
+
 CI gate, worth running before pushing:
 
 ```bash
@@ -216,6 +224,17 @@ cargo fmt --check \
   crosses between them. Anything narrower than a whole-repo policy belongs at
   the site as `#[allow(...)]` with a written reason. There are ten: four in
   `combat-core/src`, and `too_many_lines` on six scenario tests.
+- **`frontend/` is the other language, and it has the same two halves.**
+  `frontend/eslint.base.mjs` and `frontend/tsconfig.base.json` are maxi-quality
+  copies written by its `adopt.sh` — regenerate them, do not hand-edit. This
+  repo's own choices live in `eslint.config.mjs` and `tsconfig.json`, which
+  extend them; `tsconfig.json` overrides only what a browser app must differ on
+  (DOM lib, bundler resolution, JSX, no emit) and relaxes none of the strict
+  family. The CI gate is exactly `npm ci && npm run lint` run inside
+  `frontend/` — no build, no typecheck, no tests — so **`lint` is the whole
+  TypeScript gate**, and `--max-warnings 0` is what gives `no-console` teeth.
+  `frontend/` is not a Cargo workspace member; `cargo test --workspace` never
+  sees it.
 - **`enable_round_compositions`** was called `enable_ogmem_metrics` in the old
   repo. "OGMem" was private jargon with no definition; the data — per-round,
   per-ship-type snapshots — is a real OGame report feature and was kept.

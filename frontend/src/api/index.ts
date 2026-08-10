@@ -11,5 +11,4 @@ export type {
   PartyData,
   Technology,
   FleetComposition,
-  EntityType,
 } from "@/api/types";

@@ -15,10 +15,10 @@
 // serializes integer map keys as strings, so the wire shape is a string-keyed
 // object — `Record<string, number>`. Entity ids are 202-219, 401-408, 502-503.
 
-/** Entity type identifier (202-219 ships, 401-408 defences, 502-503 missiles). */
-export type EntityType = number;
-
-/** Fleet composition: entity type id -> count. Keys are stringified ids. */
+/**
+ * Fleet composition: entity type id -> count. Keys are stringified ids
+ * (202-219 ships, 401-408 defences, 502-503 missiles).
+ */
 export type FleetComposition = Record<string, number>;
 
 // --- Request model -------------------------------------------------------

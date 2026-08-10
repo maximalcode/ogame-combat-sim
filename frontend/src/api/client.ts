@@ -84,13 +84,14 @@ async function jsonRequest<T = unknown>(
   if (!response.ok) {
     // combat-api returns plain text for client errors (e.g. "both fleets are
     // empty; there is nothing to simulate"). Prefer that text when present.
-    let detail = "";
+    let detail: string;
     try {
       detail = (await response.text()).trim();
     } catch {
       detail = "";
     }
-    const message = detail || `${response.status} ${response.statusText}`;
+    const message =
+      detail || `${String(response.status)} ${response.statusText}`;
     throw new ApiError(message, response.status, endpoint);
   }
 
@@ -117,9 +118,9 @@ function isSimulationResponse(value: unknown): value is SimulationResponse {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
-    typeof v.results === "object" &&
-    v.results !== null &&
-    typeof v.report === "object" &&
-    v.report !== null
+    typeof v["results"] === "object" &&
+    v["results"] !== null &&
+    typeof v["report"] === "object" &&
+    v["report"] !== null
   );
 }

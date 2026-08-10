@@ -1,0 +1,14 @@
+// maxi-quality knip stub (#51), with this project's real entry points.
+//
+// Vite's entry is index.html -> src/main.tsx, so main.tsx is the one root of
+// the module graph. The three region components are reached from App.tsx and
+// need no entry of their own; the API barrel is deliberately listed because
+// this issue's shell does not yet consume every export it publishes and the
+// sibling issues will.
+{
+  "entry": ["src/main.tsx", "src/api/index.ts"],
+  "project": ["src/**/*.{ts,tsx}"],
+  // eslint.base.mjs imports these three; without a package boundary knip
+  // cannot see that, and reports all three as unused. Measured, not assumed.
+  "ignoreDependencies": ["@eslint/js", "typescript-eslint", "eslint-plugin-sonarjs"]
+}

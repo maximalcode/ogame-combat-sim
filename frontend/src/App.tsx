@@ -36,6 +36,17 @@ const DEMO_REQUEST: CombatRequest = {
   simulations: 100,
 };
 
+/**
+ * The client throws `ApiError` for every failure mode it knows about; anything
+ * else reaching the catch is a programmer error, which we still surface as a
+ * visible state rather than letting it reject unhandled.
+ */
+function asApiError(error: unknown): ApiError {
+  if (error instanceof ApiError) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  return new ApiError(message, 0, "(client)");
+}
+
 export function App() {
   const [results, setResults] = useState<ResultsState>({ kind: "idle" });
 
@@ -48,17 +59,7 @@ export function App() {
       // issue's job.
       setResults({ kind: "ok" });
     } catch (error) {
-      // The client throws ApiError for every failure mode; anything else is a
-      // programmer error, but we still surface it rather than rejecting.
-      const apiError =
-        error instanceof ApiError
-          ? error
-          : new ApiError(
-              error instanceof Error ? error.message : String(error),
-              0,
-              "(client)",
-            );
-      setResults({ kind: "error", error: apiError });
+      setResults({ kind: "error", error: asApiError(error) });
     }
   }, []);
 
@@ -82,7 +83,9 @@ export function App() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={runSimulation}
+            onClick={() => {
+              void runSimulation();
+            }}
             disabled={results.kind === "loading"}
             className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
           >

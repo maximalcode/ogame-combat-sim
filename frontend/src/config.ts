@@ -7,10 +7,19 @@
 // http://localhost:3000 (see vite.config.ts). That keeps a local dev workflow
 // zero-config while still allowing a deployed frontend to point at any API.
 
-const raw = import.meta.env.VITE_API_BASE_URL as string | undefined;
+const raw = import.meta.env.VITE_API_BASE_URL;
+
+// Trailing slashes are stripped by walking backwards rather than with a `/+$/`
+// regex: the regex form backtracks super-linearly on a long run of slashes, and
+// a base URL is attacker-influenced often enough not to hand it that shape.
+function withoutTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
+}
 
 /** The configured API base URL, with no trailing slash. Empty means same-origin. */
-export const API_BASE_URL: string = (raw ?? "").trim().replace(/\/+$/, "");
+export const API_BASE_URL: string = withoutTrailingSlashes((raw ?? "").trim());
 
 /** True when the client should call the API same-origin (dev proxy or co-hosted). */
 export const isSameOrigin: boolean = API_BASE_URL.length === 0;
