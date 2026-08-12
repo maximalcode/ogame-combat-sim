@@ -12,8 +12,17 @@ interface TechnologyInputProps {
   readonly onChange: (input: CombatInput) => void;
 }
 
+type TechnologySide = "attackerTechnology" | "defenderTechnology";
+
+const SIDE_LABELS: Record<TechnologySide, string> = {
+  attackerTechnology: "Attacker",
+  defenderTechnology: "Defender",
+};
+
+type CombatTechnology = keyof Pick<Technology, "weapon" | "shield" | "armour">;
+
 const COMBAT_TECHNOLOGIES: readonly {
-  readonly key: keyof Pick<Technology, "weapon" | "shield" | "armour">;
+  readonly key: CombatTechnology;
   readonly label: string;
 }[] = [
   { key: "weapon", label: "Weapons" },
@@ -39,8 +48,8 @@ function integerFromInput(value: string, maximum: number): number | undefined {
 
 export function TechnologyInput({ value, onChange }: TechnologyInputProps) {
   const changeTechnology = (
-    side: "attackerTechnology" | "defenderTechnology",
-    key: keyof Pick<Technology, "weapon" | "shield" | "armour">,
+    side: TechnologySide,
+    key: CombatTechnology,
     rawValue: string,
   ): void => {
     const level = integerFromInput(rawValue, 255);
@@ -74,7 +83,7 @@ export function TechnologyInput({ value, onChange }: TechnologyInputProps) {
         {(["attackerTechnology", "defenderTechnology"] as const).map((side) => (
           <fieldset key={side} className="space-y-2">
             <legend className="text-sm font-medium text-slate-200">
-              {side === "attackerTechnology" ? "Attacker" : "Defender"}
+              {SIDE_LABELS[side]}
             </legend>
             {COMBAT_TECHNOLOGIES.map(({ key, label }) => (
               <label key={key} className="flex items-center justify-between gap-3 text-sm text-slate-400">
@@ -85,7 +94,7 @@ export function TechnologyInput({ value, onChange }: TechnologyInputProps) {
                   max="255"
                   step="1"
                   inputMode="numeric"
-                  aria-label={`${side === "attackerTechnology" ? "Attacker" : "Defender"} ${label} level`}
+                  aria-label={`${SIDE_LABELS[side]} ${label} level`}
                   value={value[side][key]}
                   onChange={(event) => {
                     changeTechnology(side, key, event.target.value);

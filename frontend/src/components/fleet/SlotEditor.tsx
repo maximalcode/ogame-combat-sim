@@ -12,10 +12,11 @@
 
 import { DEFENCES, SHIPS, entityName } from "@/fleet/catalog";
 import type { FleetComposition } from "@/api/types";
+import type { Side } from "@/fleet/types";
 
 interface SlotEditorProps {
   /** Which side — defences are offered to the defender only. */
-  readonly side: "attacker" | "defender";
+  readonly side: Side;
   readonly entities: FleetComposition;
   readonly onChange: (entities: FleetComposition) => void;
 }

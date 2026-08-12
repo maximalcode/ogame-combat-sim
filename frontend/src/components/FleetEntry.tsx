@@ -20,8 +20,14 @@ import {
   nextSlotId,
   type FleetSlot,
   type FleetState,
+  type Side,
 } from "@/fleet/types";
 import type { FleetComposition } from "@/api/types";
+
+const SIDE_LABELS: Record<Side, string> = {
+  attacker: "Attacker",
+  defender: "Defender",
+};
 
 interface FleetEntryProps {
   readonly value: FleetState;
@@ -29,35 +35,38 @@ interface FleetEntryProps {
 }
 
 export function FleetEntry({ value, onChange }: FleetEntryProps) {
-  const [activeAttacker, setActiveAttacker] = useState(0);
-  const [activeDefender, setActiveDefender] = useState(0);
+  const [active, setActive] = useState<Record<Side, number>>({
+    attacker: 0,
+    defender: 0,
+  });
 
-  const replace = (side: "attacker" | "defender", slots: FleetSlot[]): void => {
+  const setActiveSlot = (side: Side, index: number): void => {
+    setActive((prev) => ({ ...prev, [side]: index }));
+  };
+
+  const replace = (side: Side, slots: FleetSlot[]): void => {
     onChange({ ...value, [side]: slots });
   };
 
-  const addSlot = (side: "attacker" | "defender"): void => {
+  const addSlot = (side: Side): void => {
     const current = value[side];
-    const slot = emptySlot(nextSlotId(side === "attacker" ? "A" : "D", current));
-    replace(side, [...current, slot]);
-    if (side === "attacker") setActiveAttacker(current.length);
-    else setActiveDefender(current.length);
+    replace(side, [...current, emptySlot(nextSlotId(side, current))]);
+    setActiveSlot(side, current.length);
   };
 
-  const removeSlot = (side: "attacker" | "defender", index: number): void => {
+  const removeSlot = (side: Side, index: number): void => {
     const current = value[side];
     if (current.length <= 1) return;
     const next = current.filter((_, i) => i !== index);
     replace(side, next);
-    if (side === "attacker") {
-      setActiveAttacker((prev) => Math.min(prev, next.length - 1));
-    } else {
-      setActiveDefender((prev) => Math.min(prev, next.length - 1));
-    }
+    setActive((prev) => ({
+      ...prev,
+      [side]: Math.min(prev[side], next.length - 1),
+    }));
   };
 
   const changeSlot = (
-    side: "attacker" | "defender",
+    side: Side,
     index: number,
     entities: FleetComposition,
   ): void => {
@@ -78,38 +87,27 @@ export function FleetEntry({ value, onChange }: FleetEntryProps) {
       </h2>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <PartyColumn
-          side="attacker"
-          label="Attacker"
-          slots={value.attacker}
-          activeIndex={activeAttacker}
-          onSelectSlot={setActiveAttacker}
-          onAddSlot={() => {
-            addSlot("attacker");
-          }}
-          onRemoveSlot={(index) => {
-            removeSlot("attacker", index);
-          }}
-          onChangeSlot={(index, entities) => {
-            changeSlot("attacker", index, entities);
-          }}
-        />
-        <PartyColumn
-          side="defender"
-          label="Defender"
-          slots={value.defender}
-          activeIndex={activeDefender}
-          onSelectSlot={setActiveDefender}
-          onAddSlot={() => {
-            addSlot("defender");
-          }}
-          onRemoveSlot={(index) => {
-            removeSlot("defender", index);
-          }}
-          onChangeSlot={(index, entities) => {
-            changeSlot("defender", index, entities);
-          }}
-        />
+        {(["attacker", "defender"] as const).map((side) => (
+          <PartyColumn
+            key={side}
+            side={side}
+            label={SIDE_LABELS[side]}
+            slots={value[side]}
+            activeIndex={active[side]}
+            onSelectSlot={(index) => {
+              setActiveSlot(side, index);
+            }}
+            onAddSlot={() => {
+              addSlot(side);
+            }}
+            onRemoveSlot={(index) => {
+              removeSlot(side, index);
+            }}
+            onChangeSlot={(index, entities) => {
+              changeSlot(side, index, entities);
+            }}
+          />
+        ))}
       </div>
     </section>
   );

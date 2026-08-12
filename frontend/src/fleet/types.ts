@@ -28,10 +28,10 @@ import type {
   PartyData,
   PartySlot,
 } from "@/api/types";
-import {
-  DEFAULT_COMBAT_INPUT,
-  type CombatInput,
-} from "@/combat/input";
+import type { CombatInput } from "@/combat/input";
+
+/** The two parties to a battle, as every component and helper names them. */
+export type Side = "attacker" | "defender";
 
 /** One fleet slot: an id (A1, D2, …) and its entity counts. */
 export interface FleetSlot {
@@ -56,7 +56,8 @@ export function emptySlot(id: string): FleetSlot {
  * Uses the highest existing numeric suffix rather than `length + 1` so removing
  * a middle slot and re-adding does not collide with a later id.
  */
-export function nextSlotId(prefix: "A" | "D", slots: readonly FleetSlot[]): string {
+export function nextSlotId(side: Side, slots: readonly FleetSlot[]): string {
+  const prefix = side === "attacker" ? "A" : "D";
   let max = 0;
   for (const slot of slots) {
     const match = /^([A-Z])(\d+)$/.exec(slot.id);
@@ -68,20 +69,11 @@ export function nextSlotId(prefix: "A" | "D", slots: readonly FleetSlot[]): stri
   return `${prefix}${String(max + 1)}`;
 }
 
-/** Total ship count across every slot on a side (defences included). */
-export function sideTotal(slots: readonly FleetSlot[]): number {
-  let total = 0;
-  for (const slot of slots) {
-    for (const count of Object.values(slot.entities)) {
-      total += count;
-    }
-  }
-  return total;
-}
-
 /** True when a side has no ships in any slot. */
 export function isSideEmpty(slots: readonly FleetSlot[]): boolean {
-  return sideTotal(slots) === 0;
+  return slots.every((slot) =>
+    Object.values(slot.entities).every((count) => count === 0),
+  );
 }
 
 /** Drop zero-count entries — the engine treats them as no ships, so do not send them. */
@@ -97,19 +89,27 @@ function prune(entities: FleetComposition): FleetComposition {
 function aggregate(slots: readonly FleetSlot[]): FleetComposition {
   const out: Record<string, number> = {};
   for (const slot of slots) {
-    for (const [id, count] of Object.entries(slot.entities)) {
-      if (count > 0) out[id] = (out[id] ?? 0) + count;
+    for (const [id, count] of Object.entries(prune(slot.entities))) {
+      out[id] = (out[id] ?? 0) + count;
     }
   }
   return out;
 }
 
-function partyData(entities: FleetComposition, technology: PartyData["technology"]): PartyData {
-  return { technology, entities: prune(entities) };
+/**
+ * The slots on a side that still carry ships. An all-zero slot adds nothing to
+ * the battle, so it is not sent — which also means a side whose extra slots are
+ * all empty counts as single-slot for the shape decision below. An entirely
+ * empty side keeps one slot, so slot mode never emits an empty array for a
+ * side the engine still expects to see.
+ */
+function occupiedSlots(slots: readonly FleetSlot[]): readonly FleetSlot[] {
+  const occupied = slots.filter((slot) => !isSideEmpty([slot]));
+  return occupied.length > 0 ? occupied : slots.slice(0, 1);
 }
 
 function toPartySlot(slot: FleetSlot, technology: PartyData["technology"]): PartySlot {
-  return { id: slot.id, data: partyData(slot.entities, technology) };
+  return { id: slot.id, data: { technology, entities: prune(slot.entities) } };
 }
 
 function withPlanetResources(input: CombatInput): Pick<CombatRequest, "planet_resources"> {
@@ -118,42 +118,38 @@ function withPlanetResources(input: CombatInput): Pick<CombatRequest, "planet_re
     : { planet_resources: input.planetResources };
 }
 
+// Matches the request's own default, so the UI and an empty JSON body run the
+// same number of battles.
+const SIMULATIONS = 100;
+
 /**
  * Build the `CombatRequest` for a fleet state.
  *
- * Single slot on each side → the simple party shape (flat `attacker`/`defender`,
- * no slot arrays). More than one slot on either side → the multi-slot shape,
- * with both sides carried as slot arrays and the flat fields mirroring the
- * aggregate for the downscale check.
+ * A single occupied slot on each side → the simple party shape (flat
+ * `attacker`/`defender`, no slot arrays). More than one occupied slot on either
+ * side → the multi-slot shape, with both sides carried as slot arrays and the
+ * flat fields mirroring the aggregate for the downscale check.
  */
-export function buildCombatRequest(
-  fleet: FleetState,
-  input: CombatInput = DEFAULT_COMBAT_INPUT,
-  simulations = 100,
-): CombatRequest {
-  const multiSlot = fleet.attacker.length > 1 || fleet.defender.length > 1;
-
-  if (multiSlot) {
-    return {
-      attacker: partyData(aggregate(fleet.attacker), input.attackerTechnology),
-      defender: partyData(aggregate(fleet.defender), input.defenderTechnology),
-      attacker_slots: fleet.attacker.map((slot) =>
-        toPartySlot(slot, input.attackerTechnology),
-      ),
-      defender_slots: fleet.defender.map((slot) =>
-        toPartySlot(slot, input.defenderTechnology),
-      ),
-      ...withPlanetResources(input),
-      use_rapid_fire: true,
-      simulations,
-    };
-  }
+export function buildCombatRequest(fleet: FleetState, input: CombatInput): CombatRequest {
+  const attackerSlots = occupiedSlots(fleet.attacker);
+  const defenderSlots = occupiedSlots(fleet.defender);
+  const multiSlot = attackerSlots.length > 1 || defenderSlots.length > 1;
 
   return {
-    attacker: partyData(aggregate(fleet.attacker), input.attackerTechnology),
-    defender: partyData(aggregate(fleet.defender), input.defenderTechnology),
+    attacker: { technology: input.attackerTechnology, entities: aggregate(attackerSlots) },
+    defender: { technology: input.defenderTechnology, entities: aggregate(defenderSlots) },
+    ...(multiSlot
+      ? {
+          attacker_slots: attackerSlots.map((slot) =>
+            toPartySlot(slot, input.attackerTechnology),
+          ),
+          defender_slots: defenderSlots.map((slot) =>
+            toPartySlot(slot, input.defenderTechnology),
+          ),
+        }
+      : {}),
     ...withPlanetResources(input),
     use_rapid_fire: true,
-    simulations,
+    simulations: SIMULATIONS,
   };
 }
