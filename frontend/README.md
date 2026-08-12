@@ -1,9 +1,10 @@
 # Frontend (web UI)
 
 A React + Vite + Tailwind app that talks to `combat-api`. This directory holds
-the app shell, build tooling and typed API client; the actual fleet, technology
-and results surfaces are tracked in sibling issues and slot into the
-placeholder regions established here.
+the app shell, build tooling, typed API client and the fleet-entry surface
+(multi-slot ACS composition, issue #23); the technology and results surfaces
+are tracked in sibling issues and slot into the placeholder regions
+established here.
 
 ## Stack
 
@@ -40,8 +41,9 @@ alongside it:
 cargo run -p combat-api
 ```
 
-Then open http://localhost:5173 and click **Simulate**: the shell calls
-`POST /api/simulate` with a demo request and reports whether the typed
+Then open http://localhost:5173, compose the two fleets (each side supports
+multiple ACS slots) and click **Simulate**: the shell calls
+`POST /api/simulate` with the composed request and reports whether the typed
 round-trip succeeded. Rendering the response body is a sibling issue.
 
 ## Configuration
@@ -87,9 +89,15 @@ src/
 │   ├── types.ts      # request/response models mirroring combat-types
 │   └── index.ts      # barrel
 ├── components/
-│   ├── FleetEntry.tsx       # fleet-entry region (placeholder)
+│   ├── FleetEntry.tsx       # fleet-entry region: two party columns, slot tabs
+│   ├── fleet/
+│   │   ├── PartyColumn.tsx  # one side: slot tabs + the active slot's editor
+│   │   └── SlotEditor.tsx   # one slot's composition rows and add-picker
 │   ├── TechnologyInput.tsx  # technology-input region (placeholder)
 │   └── ResultsPanel.tsx     # results region (placeholder + call-state/error)
+├── fleet/
+│   ├── catalog.ts    # entity ids and names the pickers offer
+│   └── types.ts      # FleetState, slot helpers, buildCombatRequest
 ├── config.ts         # API base URL resolution
 ├── App.tsx           # shell: layout + the one piece of shared state
 ├── main.tsx          # React root
