@@ -5,8 +5,10 @@
 // side. Counts are entered by name rather than by memorised id — the picker is
 // the only way in — and the count field rejects negatives and non-integers at
 // entry: it is a digit-only text field, so a minus sign or decimal point can
-// never reach state. That satisfies the issue's "reject at entry rather than at
-// the API" requirement without a separate validation pass.
+// never reach state, and anything above u32::MAX is rejected too — the count
+// is a u32 on the Rust side, so a larger value would clear the digit filter
+// only to fail serde at the API. That satisfies the issue's "reject at entry
+// rather than at the API" requirement without a separate validation pass.
 
 import { DEFENCES, SHIPS, entityName } from "@/fleet/catalog";
 import type { FleetComposition } from "@/api/types";
@@ -20,6 +22,12 @@ interface SlotEditorProps {
 
 /** Digits only, including the empty string. Anything else is rejected at entry. */
 const DIGITS_ONLY = /^\d*$/;
+
+// u32::MAX — `FleetComposition` counts are u32 in combat-types, so this is the
+// largest count the API will deserialize. Digit strings too long for exact
+// float representation parse to something even larger, so the comparison
+// still rejects them.
+const MAX_COUNT = 4_294_967_295;
 
 export function SlotEditor({ side, entities, onChange }: SlotEditorProps) {
   const available = side === "defender" ? [...SHIPS, ...DEFENCES] : SHIPS;
@@ -46,7 +54,9 @@ export function SlotEditor({ side, entities, onChange }: SlotEditorProps) {
 
   const onCountChange = (id: string, raw: string): void => {
     if (!DIGITS_ONLY.test(raw)) return;
-    setCount(id, raw === "" ? 0 : Number.parseInt(raw, 10));
+    const count = raw === "" ? 0 : Number.parseInt(raw, 10);
+    if (count > MAX_COUNT) return;
+    setCount(id, count);
   };
 
   return (
