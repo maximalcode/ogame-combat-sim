@@ -18,17 +18,20 @@
 //      (`combat-core/tests/class_bonuses.rs`); the builder does the same by
 //      aggregating every slot on a side into the flat party.
 //
-// Technology levels are out of scope for this issue (#23) — they arrive in #24,
-// which will replace `DEFAULT_TECHNOLOGY`. Until then every party fights at
-// level 0, which the engine accepts.
+// Each side's technology is supplied by the technology-input region. Slot
+// parties inherit their side's levels: technology belongs to a player, not an
+// individual ACS slot.
 
 import type {
   CombatRequest,
   FleetComposition,
   PartyData,
   PartySlot,
-  Technology,
 } from "@/api/types";
+import {
+  DEFAULT_COMBAT_INPUT,
+  type CombatInput,
+} from "@/combat/input";
 
 /** One fleet slot: an id (A1, D2, …) and its entity counts. */
 export interface FleetSlot {
@@ -41,16 +44,6 @@ export interface FleetState {
   readonly attacker: readonly FleetSlot[];
   readonly defender: readonly FleetSlot[];
 }
-
-/**
- * The technology every party fights at until issue #24 wires real tech input.
- * Level 0 across the board — the engine's own `Default` for `Technology`.
- */
-export const DEFAULT_TECHNOLOGY: Technology = {
-  weapon: 0,
-  shield: 0,
-  armour: 0,
-};
 
 /** A slot with no ships in it. */
 export function emptySlot(id: string): FleetSlot {
@@ -111,12 +104,18 @@ function aggregate(slots: readonly FleetSlot[]): FleetComposition {
   return out;
 }
 
-function partyData(entities: FleetComposition): PartyData {
-  return { technology: DEFAULT_TECHNOLOGY, entities: prune(entities) };
+function partyData(entities: FleetComposition, technology: PartyData["technology"]): PartyData {
+  return { technology, entities: prune(entities) };
 }
 
-function toPartySlot(slot: FleetSlot): PartySlot {
-  return { id: slot.id, data: partyData(slot.entities) };
+function toPartySlot(slot: FleetSlot, technology: PartyData["technology"]): PartySlot {
+  return { id: slot.id, data: partyData(slot.entities, technology) };
+}
+
+function withPlanetResources(input: CombatInput): Pick<CombatRequest, "planet_resources"> {
+  return input.planetResources === undefined
+    ? {}
+    : { planet_resources: input.planetResources };
 }
 
 /**
@@ -129,24 +128,31 @@ function toPartySlot(slot: FleetSlot): PartySlot {
  */
 export function buildCombatRequest(
   fleet: FleetState,
+  input: CombatInput = DEFAULT_COMBAT_INPUT,
   simulations = 100,
 ): CombatRequest {
   const multiSlot = fleet.attacker.length > 1 || fleet.defender.length > 1;
 
   if (multiSlot) {
     return {
-      attacker: partyData(aggregate(fleet.attacker)),
-      defender: partyData(aggregate(fleet.defender)),
-      attacker_slots: fleet.attacker.map(toPartySlot),
-      defender_slots: fleet.defender.map(toPartySlot),
+      attacker: partyData(aggregate(fleet.attacker), input.attackerTechnology),
+      defender: partyData(aggregate(fleet.defender), input.defenderTechnology),
+      attacker_slots: fleet.attacker.map((slot) =>
+        toPartySlot(slot, input.attackerTechnology),
+      ),
+      defender_slots: fleet.defender.map((slot) =>
+        toPartySlot(slot, input.defenderTechnology),
+      ),
+      ...withPlanetResources(input),
       use_rapid_fire: true,
       simulations,
     };
   }
 
   return {
-    attacker: partyData(aggregate(fleet.attacker)),
-    defender: partyData(aggregate(fleet.defender)),
+    attacker: partyData(aggregate(fleet.attacker), input.attackerTechnology),
+    defender: partyData(aggregate(fleet.defender), input.defenderTechnology),
+    ...withPlanetResources(input),
     use_rapid_fire: true,
     simulations,
   };
