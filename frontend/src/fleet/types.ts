@@ -33,6 +33,12 @@ import type { CombatInput } from "@/combat/input";
 /** The two parties to a battle, as every component and helper names them. */
 export type Side = "attacker" | "defender";
 
+/** User-facing names for the two battle sides. */
+export const SIDE_LABELS: Readonly<Record<Side, string>> = {
+  attacker: "Attacker",
+  defender: "Defender",
+};
+
 /** One fleet slot: an id (A1, D2, …) and its entity counts. */
 export interface FleetSlot {
   readonly id: string;
@@ -96,18 +102,6 @@ function aggregate(slots: readonly FleetSlot[]): FleetComposition {
   return out;
 }
 
-/**
- * The slots on a side that still carry ships. An all-zero slot adds nothing to
- * the battle, so it is not sent — which also means a side whose extra slots are
- * all empty counts as single-slot for the shape decision below. An entirely
- * empty side keeps one slot, so slot mode never emits an empty array for a
- * side the engine still expects to see.
- */
-function occupiedSlots(slots: readonly FleetSlot[]): readonly FleetSlot[] {
-  const occupied = slots.filter((slot) => !isSideEmpty([slot]));
-  return occupied.length > 0 ? occupied : slots.slice(0, 1);
-}
-
 function toPartySlot(slot: FleetSlot, technology: PartyData["technology"]): PartySlot {
   return { id: slot.id, data: { technology, entities: prune(slot.entities) } };
 }
@@ -125,26 +119,30 @@ const SIMULATIONS = 100;
 /**
  * Build the `CombatRequest` for a fleet state.
  *
- * A single occupied slot on each side → the simple party shape (flat
- * `attacker`/`defender`, no slot arrays). More than one occupied slot on either
- * side → the multi-slot shape, with both sides carried as slot arrays and the
- * flat fields mirroring the aggregate for the downscale check.
+ * A single slot on each side → the simple party shape (flat
+ * `attacker`/`defender`, no slot arrays). More than one slot on either side →
+ * the multi-slot shape, with both sides carried as slot arrays and the flat
+ * fields mirroring the aggregate for the downscale check.
  */
 export function buildCombatRequest(fleet: FleetState, input: CombatInput): CombatRequest {
-  const attackerSlots = occupiedSlots(fleet.attacker);
-  const defenderSlots = occupiedSlots(fleet.defender);
-  const multiSlot = attackerSlots.length > 1 || defenderSlots.length > 1;
+  const multiSlot = fleet.attacker.length > 1 || fleet.defender.length > 1;
 
   return {
-    attacker: { technology: input.attackerTechnology, entities: aggregate(attackerSlots) },
-    defender: { technology: input.defenderTechnology, entities: aggregate(defenderSlots) },
+    attacker: {
+      technology: input.technology.attacker,
+      entities: aggregate(fleet.attacker),
+    },
+    defender: {
+      technology: input.technology.defender,
+      entities: aggregate(fleet.defender),
+    },
     ...(multiSlot
       ? {
-          attacker_slots: attackerSlots.map((slot) =>
-            toPartySlot(slot, input.attackerTechnology),
+          attacker_slots: fleet.attacker.map((slot) =>
+            toPartySlot(slot, input.technology.attacker),
           ),
-          defender_slots: defenderSlots.map((slot) =>
-            toPartySlot(slot, input.defenderTechnology),
+          defender_slots: fleet.defender.map((slot) =>
+            toPartySlot(slot, input.technology.defender),
           ),
         }
       : {}),

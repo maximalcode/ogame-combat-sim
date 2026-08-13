@@ -201,8 +201,8 @@ unit's stats.
 A web UI lives under `frontend/` (see its README): fleet entry with multi-slot
 ACS, technology levels and planet resources. Rendering the results is still in
 progress — see the
-[open issues](https://github.com/maximalcode/ogame-combat-sim/issues) for what
-is. This README describes only what exists today.
+[open issues](https://github.com/maximalcode/ogame-combat-sim/issues) for the
+remaining work. This README describes only what exists today.
 
 ## Development
 

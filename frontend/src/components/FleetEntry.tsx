@@ -18,16 +18,12 @@ import { PartyColumn } from "@/components/fleet/PartyColumn";
 import {
   emptySlot,
   nextSlotId,
+  SIDE_LABELS,
   type FleetSlot,
   type FleetState,
   type Side,
 } from "@/fleet/types";
 import type { FleetComposition } from "@/api/types";
-
-const SIDE_LABELS: Record<Side, string> = {
-  attacker: "Attacker",
-  defender: "Defender",
-};
 
 interface FleetEntryProps {
   readonly value: FleetState;

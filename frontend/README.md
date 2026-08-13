@@ -89,6 +89,8 @@ src/
 │   ├── client.ts     # typed fetch wrapper; surfaces every failure as ApiError
 │   ├── types.ts      # request/response models mirroring combat-types
 │   └── index.ts      # barrel
+├── combat/
+│   └── input.ts      # technology levels + optional defender resources
 ├── components/
 │   ├── FleetEntry.tsx       # fleet-entry region: two party columns, slot tabs
 │   ├── fleet/

@@ -1,23 +1,19 @@
 // Technology and defender-resource controls. This is deliberately a controlled
 // region: App owns the values that become a combat request.
 
+import { useRef } from "react";
+
 import {
   EMPTY_PLANET_RESOURCES,
   type CombatInput,
 } from "@/combat/input";
 import type { PlanetResources, Technology } from "@/api/types";
+import { SIDE_LABELS, type Side } from "@/fleet/types";
 
 interface TechnologyInputProps {
   readonly value: CombatInput;
   readonly onChange: (input: CombatInput) => void;
 }
-
-type TechnologySide = "attackerTechnology" | "defenderTechnology";
-
-const SIDE_LABELS: Record<TechnologySide, string> = {
-  attackerTechnology: "Attacker",
-  defenderTechnology: "Defender",
-};
 
 type CombatTechnology = keyof Pick<Technology, "weapon" | "shield" | "armour">;
 
@@ -40,6 +36,7 @@ const RESOURCE_FIELDS: readonly {
 ];
 
 function integerFromInput(value: string, maximum: number): number | undefined {
+  if (value.trim() === "") return undefined;
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 && number <= maximum
     ? number
@@ -47,22 +44,34 @@ function integerFromInput(value: string, maximum: number): number | undefined {
 }
 
 export function TechnologyInput({ value, onChange }: TechnologyInputProps) {
+  const rememberedResources = useRef(
+    value.planetResources ?? EMPTY_PLANET_RESOURCES,
+  );
+
   const changeTechnology = (
-    side: TechnologySide,
+    side: Side,
     key: CombatTechnology,
     rawValue: string,
   ): void => {
     const level = integerFromInput(rawValue, 255);
     if (level === undefined) return;
-    onChange({ ...value, [side]: { ...value[side], [key]: level } });
+    onChange({
+      ...value,
+      technology: {
+        ...value.technology,
+        [side]: { ...value.technology[side], [key]: level },
+      },
+    });
   };
 
   const changeResources = (key: keyof PlanetResources, rawValue: string): void => {
     const amount = integerFromInput(rawValue, Number.MAX_SAFE_INTEGER);
     if (amount === undefined || value.planetResources === undefined) return;
+    const planetResources = { ...value.planetResources, [key]: amount };
+    rememberedResources.current = planetResources;
     onChange({
       ...value,
-      planetResources: { ...value.planetResources, [key]: amount },
+      planetResources,
     });
   };
 
@@ -80,7 +89,7 @@ export function TechnologyInput({ value, onChange }: TechnologyInputProps) {
         Technology &amp; planet resources
       </h2>
       <div className="mt-3 grid gap-5 md:grid-cols-2">
-        {(["attackerTechnology", "defenderTechnology"] as const).map((side) => (
+        {(["attacker", "defender"] as const).map((side) => (
           <fieldset key={side} className="space-y-2">
             <legend className="text-sm font-medium text-slate-200">
               {SIDE_LABELS[side]}
@@ -95,7 +104,7 @@ export function TechnologyInput({ value, onChange }: TechnologyInputProps) {
                   step="1"
                   inputMode="numeric"
                   aria-label={`${SIDE_LABELS[side]} ${label} level`}
-                  value={value[side][key]}
+                  value={value.technology[side][key]}
                   onChange={(event) => {
                     changeTechnology(side, key, event.target.value);
                   }}
@@ -114,8 +123,14 @@ export function TechnologyInput({ value, onChange }: TechnologyInputProps) {
             checked={resourcesEnabled}
             onChange={(event) => {
               if (event.target.checked) {
-                onChange({ ...value, planetResources: EMPTY_PLANET_RESOURCES });
+                onChange({
+                  ...value,
+                  planetResources: rememberedResources.current,
+                });
               } else {
+                if (value.planetResources !== undefined) {
+                  rememberedResources.current = value.planetResources;
+                }
                 const { planetResources: _, ...withoutResources } = value;
                 onChange(withoutResources);
               }
@@ -139,7 +154,7 @@ export function TechnologyInput({ value, onChange }: TechnologyInputProps) {
                 step="1"
                 inputMode="numeric"
                 disabled={!resourcesEnabled}
-                value={value.planetResources?.[key] ?? 0}
+                value={value.planetResources?.[key] ?? ""}
                 onChange={(event) => {
                   changeResources(key, event.target.value);
                 }}
