@@ -14,6 +14,24 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 Edit the right-hand column to match whatever vocabulary you actually use.
 
-Of these, only `wontfix` currently exists in the repo's GitHub labels (it ships
-with every new repo). The other four have to be created before they can be
-applied — `gh label create needs-triage`, and so on.
+All five exist in the repo's GitHub labels.
+
+## Two local conventions
+
+**`needs-triage` is also the resting state for the backlog.** The canonical
+machine treats it as "evaluation in progress", which on a repo with one
+maintainer would mean the queue is permanently mid-thought. Here it carries a
+second meaning: *evaluated, and deliberately not scheduled*. Issues in the
+Backlog milestone sit here with their triage notes attached and no further
+action pending. Several of them use the `needs-info` template in those notes —
+that is a formatting choice, not a claim that someone is waiting on a reply.
+
+**`needs-info` is therefore near-unusable here**, because the reporter and the
+maintainer are the same person and an issue waiting on yourself never resolves.
+Prefer recording the open questions in a `needs-triage` comment.
+
+**An umbrella issue rests at `ready-for-human` and closes when its children do.**
+It is not work, so it can never be `ready-for-agent`; the human part is the
+decomposition and the sequencing. #6 and #7 are the worked examples — both were
+split during triage, and both stay open purely as the thing their children roll
+up into.
