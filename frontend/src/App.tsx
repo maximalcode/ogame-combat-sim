@@ -3,10 +3,9 @@
 //
 // Three regions — fleet entry, technology input, results — each live in their
 // own component file and own no shared state. This component holds the fleet
-// state (issue #23) and the `ResultsState` the request produces; the request is
-// built from fleet and combat-input state, so the Simulate button runs what the
-// user composed rather than a hardcoded demo. Results rendering is the sibling
-// issue (#25).
+// state (issue #23) and both result requests. The normal request stays lean;
+// one representative battle asks for per-round compositions only when that
+// view opens.
 
 import { useCallback, useState } from "react";
 import { FleetEntry } from "@/components/FleetEntry";
@@ -14,8 +13,11 @@ import { TechnologyInput } from "@/components/TechnologyInput";
 import {
   ResultsPanel,
   type ResultsState,
+  type ResultsView,
 } from "@/components/ResultsPanel";
+import type { RoundResultsState } from "@/components/results/RoundCompositionView";
 import { ApiError, postSimulate } from "@/api/client";
+import type { CombatRequest } from "@/api/types";
 import {
   buildCombatRequest,
   emptySlot,
@@ -37,10 +39,17 @@ const INITIAL_FLEET: FleetState = {
   defender: [{ ...emptySlot("D1"), entities: { "204": 1000 } }],
 };
 
+function asApiError(error: unknown): ApiError {
+  const message = error instanceof Error ? error.message : String(error);
+  return error instanceof ApiError ? error : new ApiError(message, 0, "(client)");
+}
+
 export function App() {
   const [fleet, setFleet] = useState<FleetState>(INITIAL_FLEET);
   const [combatInput, setCombatInput] = useState(DEFAULT_COMBAT_INPUT);
   const [results, setResults] = useState<ResultsState>({ kind: "idle" });
+  const [resultsView, setResultsView] = useState<ResultsView>("summary");
+  const [roundResults, setRoundResults] = useState<RoundResultsState>({ kind: "idle" });
 
   const attackerEmpty = isSideEmpty(fleet.attacker);
   const defenderEmpty = isSideEmpty(fleet.defender);
@@ -48,23 +57,42 @@ export function App() {
 
   const runSimulation = useCallback(async () => {
     if (emptySide) return;
+    const request = buildCombatRequest(fleet, combatInput);
     setResults({ kind: "loading" });
+    setResultsView("summary");
+    setRoundResults({ kind: "idle" });
     try {
-      await postSimulate(buildCombatRequest(fleet, combatInput));
-      // The response is typed end to end inside the client; the shell only
-      // needs to know the call succeeded. Rendering the body is the sibling
-      // issue's job.
-      setResults({ kind: "ok" });
+      const response = await postSimulate(request);
+      setResults({ kind: "ok", response, request });
     } catch (error) {
-      // The client throws ApiError for every failure mode; anything else is a
-      // programmer error, which we still surface rather than letting reject.
-      const message =
-        error instanceof Error ? error.message : String(error);
-      const apiError =
-        error instanceof ApiError ? error : new ApiError(message, 0, "(client)");
-      setResults({ kind: "error", error: apiError });
+      setResults({ kind: "error", error: asApiError(error) });
     }
   }, [combatInput, emptySide, fleet]);
+
+  const runRoundSimulation = useCallback(async (request: CombatRequest) => {
+    setRoundResults({ kind: "loading" });
+    try {
+      const response = await postSimulate({
+        ...request,
+        simulations: 1,
+        enable_round_compositions: true,
+      });
+      setRoundResults({ kind: "ok", response });
+    } catch (error) {
+      setRoundResults({ kind: "error", error: asApiError(error) });
+    }
+  }, []);
+
+  const selectRoundView = useCallback(() => {
+    setResultsView("rounds");
+    if (
+      results.kind === "ok" &&
+      roundResults.kind !== "loading" &&
+      roundResults.kind !== "ok"
+    ) {
+      void runRoundSimulation(results.request);
+    }
+  }, [results, roundResults.kind, runRoundSimulation]);
 
   let emptyMessage = "The defender fleet is empty";
   if (attackerEmpty && defenderEmpty) {
@@ -95,13 +123,15 @@ export function App() {
               onClick={() => {
                 void runSimulation();
               }}
-              disabled={results.kind === "loading" || emptySide}
+              disabled={
+                results.kind === "loading" || roundResults.kind === "loading" || emptySide
+              }
               className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {results.kind === "loading" ? "Simulating…" : "Simulate"}
             </button>
             <p className="text-xs text-slate-500">
-              Runs the composed fleet and selected technology against the configured API. Results rendering arrives in the sibling issue.
+              Runs 100 battles for a distribution. Round compositions are requested separately, only when opened.
             </p>
           </div>
           {emptySide && (
@@ -111,7 +141,16 @@ export function App() {
           )}
         </div>
 
-        <ResultsPanel state={results} />
+        <ResultsPanel
+          state={results}
+          view={resultsView}
+          roundState={roundResults}
+          onSelectSummary={() => {
+            setResultsView("summary");
+          }}
+          onSelectRounds={selectRoundView}
+          onRetryRounds={selectRoundView}
+        />
       </main>
     </div>
   );

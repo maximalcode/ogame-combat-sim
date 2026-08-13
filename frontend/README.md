@@ -1,10 +1,8 @@
 # Frontend (web UI)
 
 A React + Vite + Tailwind app that talks to `combat-api`. This directory holds
-the app shell, build tooling, typed API client, the fleet-entry surface
-(multi-slot ACS composition, issue #23) and the technology and planet-resource
-surface (issue #24); the results surface is tracked in a sibling issue and
-slots into the placeholder region established here.
+the app shell, build tooling, typed API client, fleet-entry surface (multi-slot
+ACS composition), technology and planet-resource surface, and results display.
 
 ## Stack
 
@@ -43,9 +41,11 @@ cargo run -p combat-api
 
 Then open http://localhost:5173, compose the two fleets (each side supports
 multiple ACS slots), set each side's combat technology levels — and, if the
-defending planet is known, its resources — and click **Simulate**: the shell
-calls `POST /api/simulate` with the composed request and reports whether the
-typed round-trip succeeded. Rendering the response body is a sibling issue.
+defending planet is known, its resources — and click **Simulate**. The results
+surface renders the outcome distribution alongside its economics, ship losses,
+debris, loot and profit. Opening **Round detail** runs one representative
+battle with per-round composition tracking; aggregate simulations do not pay
+that extra cost.
 
 ## Configuration
 
@@ -96,11 +96,18 @@ src/
 │   ├── fleet/
 │   │   ├── PartyColumn.tsx  # one side: slot tabs + the active slot's editor
 │   │   └── SlotEditor.tsx   # one slot's composition rows and add-picker
+│   ├── results/
+│   │   ├── EconomicsSummary.tsx      # debris, loot, harvest and net profit
+│   │   ├── LossesTable.tsx           # average losses by entity type
+│   │   ├── OutcomeDistribution.tsx   # rates + per-outcome economics
+│   │   └── RoundCompositionView.tsx  # opt-in representative round detail
 │   ├── TechnologyInput.tsx  # technology levels + defender planet resources
-│   └── ResultsPanel.tsx     # results region (placeholder + call-state/error)
+│   └── ResultsPanel.tsx     # results region state + aggregate/round tabs
 ├── fleet/
 │   ├── catalog.ts    # entity ids and names the pickers offer
 │   └── types.ts      # FleetState, slot helpers, buildCombatRequest
+├── results/
+│   └── model.ts      # typed outcome/composition derivation + formatting
 ├── config.ts         # API base URL resolution
 ├── App.tsx           # shell: layout + the one piece of shared state
 ├── main.tsx          # React root
@@ -108,5 +115,5 @@ src/
 ```
 
 Each of the three regions is its own component file and owns none of the
-others' logic — that seam is the point of this issue. Sibling issues fill them
-in without growing one file.
+others' logic. Deeper component folders keep each region's rendering details
+behind that established seam.
