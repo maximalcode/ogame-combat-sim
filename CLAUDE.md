@@ -165,13 +165,18 @@ cargo fmt --check \
   General who researched 10 is reported as 12. Showing the researched figure
   beside a battle resolved at the higher one reads as a bug, and there is
   nowhere in the report to show both.
-- **Two OGame mechanics are known and deliberately not implemented**, because
-  neither could be sourced to a number worth committing to. The Light Fighter's
-  chance to destroy a Deathstar outright (a General perk): sources split
-  between 1-in-1000 and 1-in-10000 with nothing official either way. The
-  Engineer officer: see the inert-fields bullet above. Guessing either would
-  put a fabricated constant into a simulator whose whole selling point is
-  stating what it gets wrong.
+- **Two OGame mechanics are known and deliberately not implemented, for two
+  different reasons.** Do not collapse them into one. The Light Fighter's
+  chance to destroy a Deathstar outright (a General perk) has no number worth
+  committing to: sources split between 1-in-1000 and 1-in-10000 with nothing
+  official either way, and guessing would put a fabricated constant into a
+  simulator whose whole selling point is stating what it gets wrong. The
+  Engineer officer is the other case — not an unsourced number but nowhere to
+  put it. Its effect is on the post-battle defence rebuild roll and this engine
+  has no rebuild step at all, so `has_engineer` waits rather than being turned
+  into a stat bonus it is not; see the inert-fields bullet above. The 70% /
+  85% figures quoted at `combat-types/src/lib.rs:195` are folklore until
+  checked — issue #41 confirms them against a live source and adds the phase.
 - **Debris rules come from two places and one wins.** A request can set
   `debris_percentage` at the top level *and* describe debris inside
   `universe_settings`. `CombatRequest::debris_settings` settles it:
