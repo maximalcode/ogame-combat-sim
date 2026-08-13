@@ -4,10 +4,9 @@
 // Three regions — fleet entry, technology input, results — each live in their
 // own component file and own no shared state. This component holds the fleet
 // state (issue #23) and the `ResultsState` the request produces; the request is
-// built from the fleet state, so the Simulate button runs what the user
-// composed rather than a hardcoded demo. Technology levels are still a
-// placeholder (issue #24) — `buildCombatRequest` fights every party at level 0
-// until that lands — and results rendering is still a placeholder (issue #25).
+// built from fleet and combat-input state, so the Simulate button runs what the
+// user composed rather than a hardcoded demo. Results rendering is the sibling
+// issue (#25).
 
 import { useCallback, useState } from "react";
 import { FleetEntry } from "@/components/FleetEntry";
@@ -24,6 +23,7 @@ import {
   type FleetState,
 } from "@/fleet/types";
 import { API_BASE_URL, isSameOrigin } from "@/config";
+import { DEFAULT_COMBAT_INPUT } from "@/combat/input";
 
 /**
  * The fleet the shell opens with — the demo matchup the shell already shipped
@@ -39,6 +39,7 @@ const INITIAL_FLEET: FleetState = {
 
 export function App() {
   const [fleet, setFleet] = useState<FleetState>(INITIAL_FLEET);
+  const [combatInput, setCombatInput] = useState(DEFAULT_COMBAT_INPUT);
   const [results, setResults] = useState<ResultsState>({ kind: "idle" });
 
   const attackerEmpty = isSideEmpty(fleet.attacker);
@@ -49,7 +50,7 @@ export function App() {
     if (emptySide) return;
     setResults({ kind: "loading" });
     try {
-      await postSimulate(buildCombatRequest(fleet));
+      await postSimulate(buildCombatRequest(fleet, combatInput));
       // The response is typed end to end inside the client; the shell only
       // needs to know the call succeeded. Rendering the body is the sibling
       // issue's job.
@@ -63,7 +64,7 @@ export function App() {
         error instanceof ApiError ? error : new ApiError(message, 0, "(client)");
       setResults({ kind: "error", error: apiError });
     }
-  }, [emptySide, fleet]);
+  }, [combatInput, emptySide, fleet]);
 
   let emptyMessage = "The defender fleet is empty";
   if (attackerEmpty && defenderEmpty) {
@@ -85,7 +86,7 @@ export function App() {
 
       <main className="mx-auto max-w-5xl space-y-4 px-4 py-6">
         <FleetEntry value={fleet} onChange={setFleet} />
-        <TechnologyInput />
+        <TechnologyInput value={combatInput} onChange={setCombatInput} />
 
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
@@ -100,8 +101,7 @@ export function App() {
               {results.kind === "loading" ? "Simulating…" : "Simulate"}
             </button>
             <p className="text-xs text-slate-500">
-              Runs the composed fleet against the configured API. Technology
-              levels and results rendering arrive in the sibling issues.
+              Runs the composed fleet and selected technology against the configured API. Results rendering arrives in the sibling issue.
             </p>
           </div>
           {emptySide && (

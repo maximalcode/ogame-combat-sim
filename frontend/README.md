@@ -1,10 +1,10 @@
 # Frontend (web UI)
 
 A React + Vite + Tailwind app that talks to `combat-api`. This directory holds
-the app shell, build tooling, typed API client and the fleet-entry surface
-(multi-slot ACS composition, issue #23); the technology and results surfaces
-are tracked in sibling issues and slot into the placeholder regions
-established here.
+the app shell, build tooling, typed API client, the fleet-entry surface
+(multi-slot ACS composition, issue #23) and the technology and planet-resource
+surface (issue #24); the results surface is tracked in a sibling issue and
+slots into the placeholder region established here.
 
 ## Stack
 
@@ -42,9 +42,10 @@ cargo run -p combat-api
 ```
 
 Then open http://localhost:5173, compose the two fleets (each side supports
-multiple ACS slots) and click **Simulate**: the shell calls
-`POST /api/simulate` with the composed request and reports whether the typed
-round-trip succeeded. Rendering the response body is a sibling issue.
+multiple ACS slots), set each side's combat technology levels — and, if the
+defending planet is known, its resources — and click **Simulate**: the shell
+calls `POST /api/simulate` with the composed request and reports whether the
+typed round-trip succeeded. Rendering the response body is a sibling issue.
 
 ## Configuration
 
@@ -88,12 +89,14 @@ src/
 │   ├── client.ts     # typed fetch wrapper; surfaces every failure as ApiError
 │   ├── types.ts      # request/response models mirroring combat-types
 │   └── index.ts      # barrel
+├── combat/
+│   └── input.ts      # technology levels + optional defender resources
 ├── components/
 │   ├── FleetEntry.tsx       # fleet-entry region: two party columns, slot tabs
 │   ├── fleet/
 │   │   ├── PartyColumn.tsx  # one side: slot tabs + the active slot's editor
 │   │   └── SlotEditor.tsx   # one slot's composition rows and add-picker
-│   ├── TechnologyInput.tsx  # technology-input region (placeholder)
+│   ├── TechnologyInput.tsx  # technology levels + defender planet resources
 │   └── ResultsPanel.tsx     # results region (placeholder + call-state/error)
 ├── fleet/
 │   ├── catalog.ts    # entity ids and names the pickers offer

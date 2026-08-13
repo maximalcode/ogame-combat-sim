@@ -18,17 +18,26 @@
 //      (`combat-core/tests/class_bonuses.rs`); the builder does the same by
 //      aggregating every slot on a side into the flat party.
 //
-// Technology levels are out of scope for this issue (#23) — they arrive in #24,
-// which will replace `DEFAULT_TECHNOLOGY`. Until then every party fights at
-// level 0, which the engine accepts.
+// Each side's technology is supplied by the technology-input region. Slot
+// parties inherit their side's levels: technology belongs to a player, not an
+// individual ACS slot.
 
 import type {
   CombatRequest,
   FleetComposition,
   PartyData,
   PartySlot,
-  Technology,
 } from "@/api/types";
+import type { CombatInput } from "@/combat/input";
+
+/** The two parties to a battle, as every component and helper names them. */
+export type Side = "attacker" | "defender";
+
+/** User-facing names for the two battle sides. */
+export const SIDE_LABELS: Readonly<Record<Side, string>> = {
+  attacker: "Attacker",
+  defender: "Defender",
+};
 
 /** One fleet slot: an id (A1, D2, …) and its entity counts. */
 export interface FleetSlot {
@@ -42,16 +51,6 @@ export interface FleetState {
   readonly defender: readonly FleetSlot[];
 }
 
-/**
- * The technology every party fights at until issue #24 wires real tech input.
- * Level 0 across the board — the engine's own `Default` for `Technology`.
- */
-export const DEFAULT_TECHNOLOGY: Technology = {
-  weapon: 0,
-  shield: 0,
-  armour: 0,
-};
-
 /** A slot with no ships in it. */
 export function emptySlot(id: string): FleetSlot {
   return { id, entities: {} };
@@ -63,7 +62,8 @@ export function emptySlot(id: string): FleetSlot {
  * Uses the highest existing numeric suffix rather than `length + 1` so removing
  * a middle slot and re-adding does not collide with a later id.
  */
-export function nextSlotId(prefix: "A" | "D", slots: readonly FleetSlot[]): string {
+export function nextSlotId(side: Side, slots: readonly FleetSlot[]): string {
+  const prefix = side === "attacker" ? "A" : "D";
   let max = 0;
   for (const slot of slots) {
     const match = /^([A-Z])(\d+)$/.exec(slot.id);
@@ -75,20 +75,11 @@ export function nextSlotId(prefix: "A" | "D", slots: readonly FleetSlot[]): stri
   return `${prefix}${String(max + 1)}`;
 }
 
-/** Total ship count across every slot on a side (defences included). */
-export function sideTotal(slots: readonly FleetSlot[]): number {
-  let total = 0;
-  for (const slot of slots) {
-    for (const count of Object.values(slot.entities)) {
-      total += count;
-    }
-  }
-  return total;
-}
-
 /** True when a side has no ships in any slot. */
 export function isSideEmpty(slots: readonly FleetSlot[]): boolean {
-  return sideTotal(slots) === 0;
+  return slots.every((slot) =>
+    Object.values(slot.entities).every((count) => count === 0),
+  );
 }
 
 /** Drop zero-count entries — the engine treats them as no ships, so do not send them. */
@@ -104,50 +95,59 @@ function prune(entities: FleetComposition): FleetComposition {
 function aggregate(slots: readonly FleetSlot[]): FleetComposition {
   const out: Record<string, number> = {};
   for (const slot of slots) {
-    for (const [id, count] of Object.entries(slot.entities)) {
-      if (count > 0) out[id] = (out[id] ?? 0) + count;
+    for (const [id, count] of Object.entries(prune(slot.entities))) {
+      out[id] = (out[id] ?? 0) + count;
     }
   }
   return out;
 }
 
-function partyData(entities: FleetComposition): PartyData {
-  return { technology: DEFAULT_TECHNOLOGY, entities: prune(entities) };
+function toPartySlot(slot: FleetSlot, technology: PartyData["technology"]): PartySlot {
+  return { id: slot.id, data: { technology, entities: prune(slot.entities) } };
 }
 
-function toPartySlot(slot: FleetSlot): PartySlot {
-  return { id: slot.id, data: partyData(slot.entities) };
+function withPlanetResources(input: CombatInput): Pick<CombatRequest, "planet_resources"> {
+  return input.planetResources === undefined
+    ? {}
+    : { planet_resources: input.planetResources };
 }
+
+// Matches the request's own default, so the UI and an empty JSON body run the
+// same number of battles.
+const SIMULATIONS = 100;
 
 /**
  * Build the `CombatRequest` for a fleet state.
  *
- * Single slot on each side → the simple party shape (flat `attacker`/`defender`,
- * no slot arrays). More than one slot on either side → the multi-slot shape,
- * with both sides carried as slot arrays and the flat fields mirroring the
- * aggregate for the downscale check.
+ * A single slot on each side → the simple party shape (flat
+ * `attacker`/`defender`, no slot arrays). More than one slot on either side →
+ * the multi-slot shape, with both sides carried as slot arrays and the flat
+ * fields mirroring the aggregate for the downscale check.
  */
-export function buildCombatRequest(
-  fleet: FleetState,
-  simulations = 100,
-): CombatRequest {
+export function buildCombatRequest(fleet: FleetState, input: CombatInput): CombatRequest {
   const multiSlot = fleet.attacker.length > 1 || fleet.defender.length > 1;
 
-  if (multiSlot) {
-    return {
-      attacker: partyData(aggregate(fleet.attacker)),
-      defender: partyData(aggregate(fleet.defender)),
-      attacker_slots: fleet.attacker.map(toPartySlot),
-      defender_slots: fleet.defender.map(toPartySlot),
-      use_rapid_fire: true,
-      simulations,
-    };
-  }
-
   return {
-    attacker: partyData(aggregate(fleet.attacker)),
-    defender: partyData(aggregate(fleet.defender)),
+    attacker: {
+      technology: input.technology.attacker,
+      entities: aggregate(fleet.attacker),
+    },
+    defender: {
+      technology: input.technology.defender,
+      entities: aggregate(fleet.defender),
+    },
+    ...(multiSlot
+      ? {
+          attacker_slots: fleet.attacker.map((slot) =>
+            toPartySlot(slot, input.technology.attacker),
+          ),
+          defender_slots: fleet.defender.map((slot) =>
+            toPartySlot(slot, input.technology.defender),
+          ),
+        }
+      : {}),
+    ...withPlanetResources(input),
     use_rapid_fire: true,
-    simulations,
+    simulations: SIMULATIONS,
   };
 }

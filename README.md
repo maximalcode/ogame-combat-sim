@@ -198,9 +198,11 @@ unit's stats.
 | `combat-api` | A small stateless HTTP server over the engine |
 | `combat-cli` | The command-line interface: `sim` and `entities` |
 
-A web UI is planned but not yet here; see the
-[open issues](https://github.com/maximalcode/ogame-combat-sim/issues) for what
-is actually in progress. This README describes only what exists today.
+A web UI lives under `frontend/` (see its README): fleet entry with multi-slot
+ACS, technology levels and planet resources. Rendering the results is still in
+progress — see the
+[open issues](https://github.com/maximalcode/ogame-combat-sim/issues) for the
+remaining work. This README describes only what exists today.
 
 ## Development
 

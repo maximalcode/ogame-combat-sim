@@ -13,9 +13,7 @@
 
 import { SlotEditor } from "@/components/fleet/SlotEditor";
 import type { FleetComposition } from "@/api/types";
-import type { FleetSlot } from "@/fleet/types";
-
-export type Side = "attacker" | "defender";
+import type { FleetSlot, Side } from "@/fleet/types";
 
 interface PartyColumnProps {
   readonly side: Side;
