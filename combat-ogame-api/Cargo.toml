@@ -1,0 +1,22 @@
+[package]
+name = "combat-ogame-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Typed client for OGame's public per-universe XML metadata API"
+
+[dependencies]
+combat-types = { path = "../combat-types" }
+quick-xml = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "time"] }
+
+[dev-dependencies]
+approx = { workspace = true }
+
+[lints]
+workspace = true

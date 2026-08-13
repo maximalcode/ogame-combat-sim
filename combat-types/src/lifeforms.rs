@@ -28,11 +28,11 @@
 //! directly, and what every other current simulator accepts.
 //!
 //! [`LifeformTechTable`] is the layer above it — which research buffs which
-//! ships, and by how much per level. [`BuiltinLifeformTechs`] is the only
-//! implementation today. It is deliberately a trait: Gameforge publishes the
-//! whole configuration per universe in `serverData.xml`'s `<lifeformSettings>`
-//! block, so a loader for that file is the intended second implementation and
-//! should be an added source rather than a rewrite.
+//! ships, and by how much per level. [`BuiltinLifeformTechs`] is the offline
+//! implementation bundled with this crate. It is deliberately a trait:
+//! Gameforge publishes the whole configuration per universe in
+//! `serverData.xml`'s `<lifeformSettings>` block, so integration crates can add
+//! a live source without rewriting combat's seam.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -161,11 +161,11 @@ pub struct LifeformTech {
 
 /// Where the lifeform configuration comes from.
 ///
-/// [`BuiltinLifeformTechs`] is the only implementation today. The trait exists
-/// because Gameforge publishes the same configuration per universe in
-/// `serverData.xml`'s `<lifeformSettings>` block — effect type, target ids,
-/// per-level value, growth factor and caps — so a loader for that file can be
-/// added as a second source without touching a caller.
+/// [`BuiltinLifeformTechs`] is the offline implementation bundled with this
+/// crate. The trait exists because Gameforge publishes the same configuration
+/// per universe in `serverData.xml`'s `<lifeformSettings>` block — effect type,
+/// target ids, per-level value, growth factor and caps — so a loader can be
+/// added by an integration crate without touching combat or its callers.
 pub trait LifeformTechTable {
     /// The effect of one research, or `None` when this table does not define
     /// that id.

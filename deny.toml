@@ -51,9 +51,20 @@ wildcards = "allow" # clippy::wildcard_dependencies already owns this (lints.tom
 #   BSD-3-Clause  — matchit is "MIT AND BSD-3-Clause"; AND, so both are needed.
 #   Unicode-3.0   — unicode-ident is "(MIT OR Apache-2.0) AND Unicode-3.0",
 #     the licence on the Unicode character tables it embeds.
-# Adding a dependency that needs a fifth entry should be a visible decision,
+#   ISC           — ring, rustls-webpki and untrusted; permissive TLS building
+#     blocks required by reqwest's rustls backend.
+#   CDLA-Permissive-2.0 — webpki-roots' Mozilla trust-anchor data; permissive
+#     data terms required by reqwest's bundled root certificate store.
+# Adding a dependency that needs another entry should be a visible decision,
 # which failing the gate makes it.
-allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0"]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "ISC",
+    "CDLA-Permissive-2.0",
+]
 
 [sources]
 # crates.io only, by default. A git dependency is a supply chain with no

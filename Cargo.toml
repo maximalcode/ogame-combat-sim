@@ -5,6 +5,7 @@ members = [
     "combat-types",
     "combat-api",
     "combat-cli",
+    "combat-ogame-api",
 ]
 
 [workspace.package]
@@ -49,6 +50,11 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Official OGame XML metadata client. Kept out of the engine crates so offline
+# simulation does not acquire a network dependency.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+quick-xml = { version = "0.41", features = ["serialize"] }
 
 approx = "0.5"
 criterion = "0.8"

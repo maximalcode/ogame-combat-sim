@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<serverData timestamp="1700000000" serverId="en123">
+  <number>123</number>
+  <language>en</language>
+  <timezone>Europe/London</timezone>
+  <timezoneOffset>+00:00</timezoneOffset>
+  <domain>s123-en.ogame.gameforge.com</domain>
+  <version>13.0.0</version>
+  <speed>8</speed>
+  <speedFleetPeaceful>2</speedFleetPeaceful>
+  <speedFleetWar>3</speedFleetWar>
+  <speedFleetHolding>4</speedFleetHolding>
+  <galaxies>9</galaxies>
+  <systems>499</systems>
+  <acs>1</acs>
+  <rapidFire>1</rapidFire>
+  <defToTF>0</defToTF>
+  <debrisFactor>0.7</debrisFactor>
+  <debrisFactorDef>0.3</debrisFactorDef>
+  <repairFactor>0.7</repairFactor>
+  <donutGalaxy>1</donutGalaxy>
+  <donutSystem>1</donutSystem>
+  <globalDeuteriumSaveFactor>0.8</globalDeuteriumSaveFactor>
+  <deuteriumInDebris>1</deuteriumInDebris>
+  <lifeformSettings>
+    <lifeform lifeformId="1">
+      <buildings>
+        <building technologyId="11101">
+          <type>Quarters</type>
+          <factors>
+            <capacityBase>210</capacityBase>
+            <capacityFactor>1.21</capacityFactor>
+            <growthBase>16</growthBase>
+            <growthFactor>1.2</growthFactor>
+          </factors>
+        </building>
+      </buildings>
+      <researches>
+        <research technologyId="11209">
+          <type>BaseStatsBooster</type>
+          <factors>
+            <technology>
+              <techId>204</techId>
+              <armorBase>0.3</armorBase>
+              <armorFactor>1</armorFactor>
+              <shieldBase>0.3</shieldBase>
+              <shieldFactor>1</shieldFactor>
+              <weaponBase>0.3</weaponBase>
+              <weaponFactor>1</weaponFactor>
+              <cargoBase>0.3</cargoBase>
+              <cargoFactor>1</cargoFactor>
+              <speedBase>0.3</speedBase>
+              <speedFactor>1</speedFactor>
+            </technology>
+          </factors>
+        </research>
+        <research technologyId="11217">
+          <type>CostReduction</type>
+          <factors>
+            <technology>
+              <techId>106</techId>
+              <technologyBase>0.1</technologyBase>
+              <technologyFactor>1</technologyFactor>
+              <technologyMax>0.5</technologyMax>
+              <timeTechnologyBase>0.2</timeTechnologyBase>
+              <timeTechnologyFactor>1</timeTechnologyFactor>
+              <timeTechnologyMax>0.99</timeTechnologyMax>
+            </technology>
+          </factors>
+        </research>
+      </researches>
+    </lifeform>
+    <lifeform lifeformId="2">
+      <buildings/>
+      <researches>
+        <research technologyId="12216">
+          <type>BaseStatsBooster</type>
+          <factors>
+            <technology>
+              <techId>401</techId>
+              <armorBase>0.5</armorBase>
+              <armorFactor>1</armorFactor>
+              <shieldBase>0.5</shieldBase>
+              <shieldFactor>1</shieldFactor>
+              <weaponBase>0.5</weaponBase>
+              <weaponFactor>1</weaponFactor>
+            </technology>
+            <technology>
+              <techId>408</techId>
+              <armorBase>0.5</armorBase>
+              <armorFactor>1</armorFactor>
+              <shieldBase>0.5</shieldBase>
+              <shieldFactor>1</shieldFactor>
+              <weaponBase>0.5</weaponBase>
+              <weaponFactor>1</weaponFactor>
+            </technology>
+          </factors>
+        </research>
+      </researches>
+    </lifeform>
+  </lifeformSettings>
+</serverData>

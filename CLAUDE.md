@@ -47,6 +47,7 @@ itself was carried over intact — it was never contaminated.
 | `combat-cli/src/cli.rs` | clap definitions, `build_request`, `parse_request_json`, `validate` |
 | `combat-cli/src/args.rs` | `parse_fleet` / `parse_tech` / `parse_resources` — the shorthand parsers |
 | `combat-cli/src/render.rs` | Human-readable output. Returns `String`, never prints |
+| `combat-ogame-api/src/lib.rs` | Public OGame XML client and offline parsers; disk cache, per-host rate limit and `serverData.xml` lifeform table source |
 
 ## Running a simulation
 
@@ -145,10 +146,10 @@ cargo fmt --check \
   moves all five stats at one rate, so carrying them costs nothing and leaving
   them out would make the flight model a schema change rather than a reader.
 - **The lifeform table is hardcoded behind a trait, on purpose.**
-  `BuiltinLifeformTechs` is the only implementation of `LifeformTechTable`
-  today. Gameforge publishes the whole per-universe configuration in
-  `serverData.xml`'s `<lifeformSettings>`, so a loader for it is the intended
-  second implementation — add a source, do not rewrite the seam. Three
+  `BuiltinLifeformTechs` is the offline implementation of `LifeformTechTable`;
+  `combat-ogame-api::ServerDataLifeformTechs` is the per-universe source backed
+  by `serverData.xml`'s `<lifeformSettings>`. Keep adding sources behind that
+  seam rather than rewriting it. Three
   researches named like combat techs (`12217` Rune Shields, `13217`
   Experimental Weapons Technology, `14217` Psionic Shield Matrix) reduce
   research cost and time and grant **zero** combat power; a test asserts they
@@ -245,6 +246,11 @@ cargo fmt --check \
   TypeScript gate**, and `--max-warnings 0` is what gives `no-console` teeth.
   `frontend/` is not a Cargo workspace member; `cargo test --workspace` never
   sees it.
+- **The OGame XML cache has two clocks.** `combat-ogame-api` accepts a cached
+  response only while both its file age and the root `timestamp` are within the
+  endpoint's own cadence (hourly for highscores, daily for players and server
+  data, weekly for universe and player data). Fetching stays out of every
+  engine path, and the one-request-per-second limiter is process-wide per host.
 - **`enable_round_compositions`** was called `enable_ogmem_metrics` in the old
   repo. "OGMem" was private jargon with no definition; the data — per-round,
   per-ship-type snapshots — is a real OGame report feature and was kept.
