@@ -156,7 +156,12 @@ pub fn calculate_losses_value(
     value
 }
 
-/// Calculate profit for attacker
+/// Calculate the attacker's profit, assuming the attacker harvests the entire debris field.
+///
+/// This and [`calculate_defender_profit`] are alternative scenarios, not two halves of one
+/// ledger. Summing them double-counts the field. Defence debris and deuterium debris, when
+/// enabled, are included through [`DebrisField::total`] and therefore affect both scenarios.
+///
 /// Profit = Debris + Loot - Losses - Fuel Cost
 #[must_use]
 pub fn calculate_attacker_profit(
@@ -174,7 +179,12 @@ pub fn calculate_attacker_profit(
     gains as i64 - losses_value as i64
 }
 
-/// Calculate profit for defender
+/// Calculate the defender's profit, assuming the defender harvests the entire debris field.
+///
+/// This and [`calculate_attacker_profit`] are alternative scenarios, not two halves of one
+/// ledger. Summing them double-counts the field. Defence debris and deuterium debris, when
+/// enabled, are included through [`DebrisField::total`] and therefore affect both scenarios.
+///
 /// Profit = Debris - Losses
 #[must_use]
 pub fn calculate_defender_profit(
