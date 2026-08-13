@@ -197,6 +197,7 @@ unit's stats.
 | `combat-core` | The engine: rounds, rapid fire, explosions, debris, loot, downscaling |
 | `combat-api` | A small stateless HTTP server over the engine |
 | `combat-cli` | The command-line interface: `sim` and `entities` |
+| `combat-ogame-api` | Typed access to OGame's public per-universe XML metadata |
 
 A web UI lives under `frontend/` (see its README): fleet entry with multi-slot
 ACS, technology levels and planet resources. Rendering the results is still in
