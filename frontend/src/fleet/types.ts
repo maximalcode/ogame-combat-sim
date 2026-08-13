@@ -18,17 +18,20 @@
 //      (`combat-core/tests/class_bonuses.rs`); the builder does the same by
 //      aggregating every slot on a side into the flat party.
 //
-// Each side's technology is supplied by the technology-input region. Slot
-// parties inherit their side's levels: technology belongs to a player, not an
-// individual ACS slot.
+// Each side's technology and optional lifeform percentages are supplied by the
+// technology-input region. Slot parties inherit their side's modifiers because
+// that is the granularity this UI collects; the builder keeps the same party
+// shape in flat and slot mode.
 
 import type {
   CombatRequest,
   FleetComposition,
+  LifeformBonus,
+  LifeformBonuses,
   PartyData,
   PartySlot,
 } from "@/api/types";
-import type { CombatInput } from "@/combat/input";
+import type { ClassBonuses, CombatInput } from "@/combat/input";
 
 /** The two parties to a battle, as every component and helper names them. */
 export type Side = "attacker" | "defender";
@@ -102,14 +105,71 @@ function aggregate(slots: readonly FleetSlot[]): FleetComposition {
   return out;
 }
 
-function toPartySlot(slot: FleetSlot, technology: PartyData["technology"]): PartySlot {
-  return { id: slot.id, data: { technology, entities: prune(slot.entities) } };
+function hasLifeformStats(bonus: LifeformBonus): boolean {
+  return Object.values(bonus).some((value) => value !== undefined && value !== 0);
+}
+
+function pruneLifeform(
+  lifeform: LifeformBonuses | undefined,
+): LifeformBonuses | undefined {
+  if (lifeform === undefined) return undefined;
+  const entries = Object.entries(lifeform).filter(([, bonus]) =>
+    hasLifeformStats(bonus),
+  );
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
+}
+
+function partyData(
+  entities: FleetComposition,
+  technology: PartyData["technology"],
+  lifeform: LifeformBonuses | undefined,
+): PartyData {
+  const suppliedLifeform = pruneLifeform(lifeform);
+  return {
+    technology,
+    entities: prune(entities),
+    ...(suppliedLifeform === undefined ? {} : { lifeform: suppliedLifeform }),
+  };
+}
+
+function toPartySlot(
+  slot: FleetSlot,
+  technology: PartyData["technology"],
+  lifeform: LifeformBonuses | undefined,
+): PartySlot {
+  return { id: slot.id, data: partyData(slot.entities, technology, lifeform) };
 }
 
 function withPlanetResources(input: CombatInput): Pick<CombatRequest, "planet_resources"> {
   return input.planetResources === undefined
     ? {}
     : { planet_resources: input.planetResources };
+}
+
+function hasClassSelection(bonuses: ClassBonuses | undefined): boolean {
+  return (
+    bonuses?.player_class !== undefined ||
+    bonuses?.alliance_class !== undefined
+  );
+}
+
+function withClassBonuses(
+  input: CombatInput,
+): Pick<CombatRequest, "attacker_bonuses" | "defender_bonuses"> {
+  const attacker = input.classBonuses.attacker;
+  const defender = input.classBonuses.defender;
+  return {
+    ...(hasClassSelection(attacker) ? { attacker_bonuses: attacker } : {}),
+    ...(hasClassSelection(defender) ? { defender_bonuses: defender } : {}),
+  };
+}
+
+function withUniverseSettings(
+  input: CombatInput,
+): Pick<CombatRequest, "universe_settings"> {
+  return input.universeSettings === undefined
+    ? {}
+    : { universe_settings: input.universeSettings };
 }
 
 // Matches the request's own default, so the UI and an empty JSON body run the
@@ -128,25 +188,37 @@ export function buildCombatRequest(fleet: FleetState, input: CombatInput): Comba
   const multiSlot = fleet.attacker.length > 1 || fleet.defender.length > 1;
 
   return {
-    attacker: {
-      technology: input.technology.attacker,
-      entities: aggregate(fleet.attacker),
-    },
-    defender: {
-      technology: input.technology.defender,
-      entities: aggregate(fleet.defender),
-    },
+    attacker: partyData(
+      aggregate(fleet.attacker),
+      input.technology.attacker,
+      input.lifeform.attacker,
+    ),
+    defender: partyData(
+      aggregate(fleet.defender),
+      input.technology.defender,
+      input.lifeform.defender,
+    ),
     ...(multiSlot
       ? {
           attacker_slots: fleet.attacker.map((slot) =>
-            toPartySlot(slot, input.technology.attacker),
+            toPartySlot(
+              slot,
+              input.technology.attacker,
+              input.lifeform.attacker,
+            ),
           ),
           defender_slots: fleet.defender.map((slot) =>
-            toPartySlot(slot, input.technology.defender),
+            toPartySlot(
+              slot,
+              input.technology.defender,
+              input.lifeform.defender,
+            ),
           ),
         }
       : {}),
     ...withPlanetResources(input),
+    ...withClassBonuses(input),
+    ...withUniverseSettings(input),
     use_rapid_fire: true,
     simulations: SIMULATIONS,
   };

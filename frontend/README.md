@@ -90,9 +90,12 @@ src/
 │   ├── types.ts      # request/response models mirroring combat-types
 │   └── index.ts      # barrel
 ├── combat/
-│   └── input.ts      # technology levels + optional defender resources
+│   └── input.ts      # technology, optional modifiers + defender resources
 ├── components/
+│   ├── ClassInput.tsx       # per-side player and alliance class selectors
 │   ├── FleetEntry.tsx       # fleet-entry region: two party columns, slot tabs
+│   ├── LifeformInput.tsx    # per-side, per-entity lifeform percentages
+│   ├── UniverseSettingsInput.tsx # optional universe debris override
 │   ├── fleet/
 │   │   ├── PartyColumn.tsx  # one side: slot tabs + the active slot's editor
 │   │   └── SlotEditor.tsx   # one slot's composition rows and add-picker
@@ -101,7 +104,7 @@ src/
 │   │   ├── LossesTable.tsx           # average losses by entity type
 │   │   ├── OutcomeDistribution.tsx   # rates + per-outcome economics
 │   │   └── RoundCompositionView.tsx  # opt-in representative round detail
-│   ├── TechnologyInput.tsx  # technology levels + defender planet resources
+│   ├── TechnologyInput.tsx  # composes technology, modifiers + resources
 │   └── ResultsPanel.tsx     # results region state + aggregate/round tabs
 ├── fleet/
 │   ├── catalog.ts    # entity ids and names the pickers offer
