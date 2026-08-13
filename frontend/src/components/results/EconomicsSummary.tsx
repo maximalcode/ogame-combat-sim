@@ -73,8 +73,10 @@ export function EconomicsSummary({ response }: EconomicsSummaryProps) {
 
       <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
         <h3 className="font-medium text-slate-100">Average net result</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          Debris and loot minus losses, averaged over every simulation.
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          Alternative scenarios, averaged over every simulation: each assumes that side harvests
+          the entire debris field, and the attacker also keeps the loot. Do not add them; that
+          would count the field twice.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded border border-indigo-900/60 bg-indigo-950/20 p-4">

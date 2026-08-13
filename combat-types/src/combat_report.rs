@@ -123,7 +123,12 @@ pub struct MoonDestructionInfo {
     pub moon_size: u32,
 }
 
-/// Economic summary of the battle
+/// Economic summary of the battle.
+///
+/// `attacker_profit` and `defender_profit` are alternative scenarios: each assumes that side
+/// harvests the entire debris field. They are not two halves of one ledger, and summing them
+/// double-counts the field. Both use [`DebrisField::total`], so defence debris and deuterium
+/// debris affect both figures when enabled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EconomicSummary {
     /// Debris field created
@@ -141,10 +146,10 @@ pub struct EconomicSummary {
     /// Defender's cost of losses
     pub defender_losses_cost: ResourceCost,
 
-    /// Attacker's net profit (debris + plunder - losses)
+    /// Attacker's net profit, assuming the attacker harvests the entire field
     pub attacker_profit: i64,
 
-    /// Defender's net profit (debris - losses)
+    /// Defender's net profit, assuming the defender harvests the entire field
     pub defender_profit: i64,
 
     /// Harvest info (if applicable)

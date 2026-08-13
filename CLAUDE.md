@@ -196,6 +196,11 @@ cargo fmt --check \
   universe moves the moon roll and the harvest estimate too. That is correct —
   recyclers do collect it — but it means a change to the debris maths is never
   only a change to the debris maths.
+- **The two profit figures are alternatives, not addends.** `attacker_profit`
+  assumes the attacker harvests the entire debris field; `defender_profit`
+  assumes the defender does. Summing them double-counts the field. Because both
+  use `DebrisField::total()`, enabling defence debris or deuterium debris moves
+  both figures at once.
 - **`/api/simulate` overrides the request.** It caps `simulations` at
   `MAX_SIMULATIONS` (default 1000) and forces `enable_downscaling = None`.
   Both are HTTP-layer server protection; the library has no limits. **The CLI
