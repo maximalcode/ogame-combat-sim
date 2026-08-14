@@ -23,8 +23,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Pinned to a commit, not to '@v1'. 'v1' is a moving tag that maxi-quality
+  # repoints at its main, so this repo was silently taking whatever landed
+  # there — including, right now, 7 commits past the v1.0.5 release. A SHA
+  # makes an upgrade a diff someone approves. Repin to the next release tag
+  # once one is cut past 5c9571c9.
   quality:
-    uses: maximalcode/maxi-quality/.github/workflows/quality.yml@v1
+    uses: maximalcode/maxi-quality/.github/workflows/quality.yml@5c9571c9fc72d86ded7f14fa8c6121603909344f # v1 @ 2026-08-14
 
   # Rust Layer 1 (maxi-quality). Toolchain and cargo-deny are PINNED: with
   # warnings promoted to errors, an analyzer upgrade that adds lints is a
