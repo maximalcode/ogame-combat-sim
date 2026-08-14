@@ -291,6 +291,17 @@ pub fn render_rounds(result: &SimulationResult, total: u32) -> String {
         return out;
     };
 
+    // A battle v13's instant calculation decided has a round list and nothing
+    // in it, which is the truth rather than a gap: no rounds were fought. An
+    // empty table under a heading reads as a bug, so say it instead.
+    if rounds.is_empty() {
+        let _ = writeln!(
+            out,
+            "  (no rounds were fought — one side out-gunned the other by more than\n   10,000 times, so the battle was calculated instantly)"
+        );
+        return out;
+    }
+
     round_row!(
         out,
         "Round",
@@ -518,6 +529,33 @@ mod tests {
         let out = render_rounds(&result, 100);
         assert!(out.contains("simulation 1 of 100"), "{out}");
         assert!(out.contains("no round detail"), "{out}");
+    }
+
+    /// An instantly calculated battle records a round list with nothing in it,
+    /// which is a different statement from "nothing was recorded" and reads as
+    /// a broken table if it is printed as one.
+    #[test]
+    fn a_battle_with_no_rounds_says_why_it_has_none() {
+        let result = SimulationResult {
+            outcome: combat_types::CombatOutcome::AttackersWin,
+            rounds: 0,
+            attacker_losses: FleetComposition::new(),
+            defender_losses: FleetComposition::new(),
+            attacker_remaining: FleetComposition::new(),
+            defender_remaining: FleetComposition::new(),
+            debris_field: combat_types::DebrisField::default(),
+            loot: combat_types::PlanetResources::default(),
+            attacker_profit: 0,
+            defender_profit: 0,
+            round_details: Some(Vec::new()),
+            round_compositions: None,
+            round_compositions_by_slot: None,
+            attacker_slots: None,
+            defender_slots: None,
+        };
+        let out = render_rounds(&result, 1);
+        assert!(out.contains("no rounds were fought"), "{out}");
+        assert!(!out.contains("Att. damage"), "{out}");
     }
 
     #[test]

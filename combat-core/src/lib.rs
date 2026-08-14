@@ -1,6 +1,7 @@
 mod combat;
 pub mod economics;
 mod entity;
+mod instant;
 pub mod report_builder;
 mod scaling;
 mod simulator;

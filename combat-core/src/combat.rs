@@ -1,4 +1,5 @@
 use crate::entity::Entity;
+use crate::instant::InstantCalculation;
 use crate::stats::StatsCache;
 use combat_types::{
     EntityStats, EntityType, FleetComposition, PartyData, RoundComposition, RoundDetails,
@@ -275,6 +276,20 @@ impl Party {
         }
     }
 
+    /// Wipe the side out without a shot being fired.
+    ///
+    /// The one thing v13's instant calculation has to do to the battle, and the
+    /// only reason it is this small: emptying the losing party leaves the round
+    /// loop's own condition false, so the loop does not run, `rounds` stays 0
+    /// and the result — outcome, losses, remaining, per-slot breakdown, and
+    /// everything the simulator derives from them — is assembled by exactly the
+    /// code that assembles a fought battle's. A short-circuit that built its
+    /// own result would be a second place for the shape of a result to be
+    /// decided, and the two would drift.
+    pub fn annihilate(&mut self) {
+        self.entities.clear();
+    }
+
     pub fn regenerate_shields(&mut self) {
         for entity in &mut self.entities {
             entity.regenerate_shield();
@@ -409,6 +424,52 @@ impl Combat {
         collect_compositions: bool,
         rng: &mut impl Rng,
     ) -> SingleCombatResult {
+        self.resolve(
+            attacker_data,
+            defender_data,
+            use_rapid_fire,
+            collect_compositions,
+            InstantCalculation::Applied,
+            rng,
+        )
+    }
+
+    /// The same battle with v13's instant calculation left off, fought round by
+    /// round however lopsided it is.
+    ///
+    /// The short-circuit is only allowed to be an optimisation, and a claim
+    /// like that is worth exactly what tests it: `instant_calculation.rs` runs
+    /// a battle down both paths and compares the two results field for field.
+    /// Nothing in the engine calls this — [`Combat::simulate_single`] is the
+    /// entry point, and `Simulator` goes through that — but the equivalence
+    /// cannot be asserted from outside the crate without it.
+    pub fn simulate_single_through_the_rounds(
+        &self,
+        attacker_data: &PartyData,
+        defender_data: &PartyData,
+        use_rapid_fire: bool,
+        collect_compositions: bool,
+        rng: &mut impl Rng,
+    ) -> SingleCombatResult {
+        self.resolve(
+            attacker_data,
+            defender_data,
+            use_rapid_fire,
+            collect_compositions,
+            InstantCalculation::Skipped,
+            rng,
+        )
+    }
+
+    fn resolve(
+        &self,
+        attacker_data: &PartyData,
+        defender_data: &PartyData,
+        use_rapid_fire: bool,
+        collect_compositions: bool,
+        instant: InstantCalculation,
+        rng: &mut impl Rng,
+    ) -> SingleCombatResult {
         // Precompute stats
         let attacker_stats = StatsCache::new(self.entity_db, attacker_data);
         let defender_stats = StatsCache::new(self.entity_db, defender_data);
@@ -416,6 +477,13 @@ impl Combat {
         // Create parties
         let mut attackers = Party::new(attacker_data, self.entity_db, &attacker_stats);
         let mut defenders = Party::new(defender_data, self.entity_db, &defender_stats);
+
+        // v13's instant calculation, after the parties are built and before a
+        // shot is fired: the rule is about effective attack power, and the
+        // units are where the effective figures already are. See
+        // `crate::instant` for what it decides and, more to the point, for the
+        // battles it declines to decide.
+        instant.apply(&mut attackers, &mut defenders);
 
         let mut round = 0u8;
         let mut round_details: Vec<RoundDetails> = Vec::new();
@@ -605,6 +673,15 @@ impl Combat {
             let original = extend_party(&mut defenders, idx, data);
             defender_original_per_slot.insert((idx + 1) as u8, original);
         }
+
+        // v13's instant calculation applies here too, and on the same figures.
+        // Combined attack power is a property of a *side*, and slots are only
+        // how one side's fleet is reported afterwards — an attacker who splits
+        // a fleet across A1 and A2 has not changed what it is worth, so a rule
+        // that read the slots separately would answer differently for the same
+        // ships. The parties below are already the whole side merged, which is
+        // exactly what the rule wants to see.
+        InstantCalculation::Applied.apply(&mut attackers, &mut defenders);
 
         // Run the same round loop with metrics
         let mut round = 0u8;

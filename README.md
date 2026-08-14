@@ -29,6 +29,10 @@ The engine implements OGame's combat resolution as it actually behaves:
 - **Loot** — plunder at 50/75/100%, capped by surviving cargo capacity
 - **Downscaling** — battles above ten million ships are simulated at reduced
   scale and extrapolated, so a fleet of any size resolves in reasonable time
+- **Instant calculation** — v13's entry rule: a side with more than 10,000 times
+  the opposition's combined attack power can win the battle without it being
+  fought. A fleet of espionage probes is not an automatic loss, it is simply
+  outgunned
 
 ## Accuracy — what is and is not modelled
 
@@ -42,7 +46,13 @@ What is **not** yet applied:
 | Missing | Since | Effect |
 | --- | --- | --- |
 | The lifeform empire model | v9 (2022) | Bonuses apply, but which planets, buildings and species experience produced them is the caller's arithmetic — the engine takes researched levels, or the resolved percentages |
-| v13 instant-calc rule | v13 (2026) | Battles short-circuit above a 10,000× attack-power ratio |
+
+v13's instant calculation is implemented, and on less than the game applies it
+to. The 10,000× ratio is the gate; a battle only skips its rounds if the engine
+can also show that the losing side cannot take a single unit with it and that
+the winning side's fire actually gets through. Everything else is simulated —
+slower, and the same answer. The one visible consequence is the round count: a
+battle decided this way honestly reports zero rounds fought.
 
 One thing outside combat itself is missing too, and it changes what an attack
 costs: destroyed defences are never rebuilt here, where the game gives each one
