@@ -36,6 +36,39 @@ pub enum Command {
     Sim(Box<SimArgs>),
     /// List every entity the simulator knows: id, name, aliases and stats.
     Entities,
+    /// Write and check regression-corpus fixtures from real combat reports.
+    Fixture {
+        #[command(subcommand)]
+        action: FixtureCommand,
+    },
+}
+
+/// What to do with a fixture.
+///
+/// These run the checks the corpus test runs, from `combat-fixtures`, so a
+/// fixture that passes here passes in CI.
+#[derive(Debug, Subcommand)]
+pub enum FixtureCommand {
+    /// Print a fixture skeleton to fill in, ready to redirect into a file.
+    Template,
+    /// Validate fixtures without simulating them.
+    ///
+    /// Catches a misspelled field inside "request", which is otherwise ignored
+    /// in silence and changes the battle the fixture describes.
+    Check {
+        /// Fixture files, or directories to search for them.
+        #[arg(required = true, value_name = "PATH")]
+        paths: Vec<std::path::PathBuf>,
+    },
+    /// Validate, simulate, and print observed against simulated.
+    ///
+    /// The per-battle range in each row is what a tolerance justification
+    /// should be written from.
+    Run {
+        /// Fixture files, or directories to search for them.
+        #[arg(required = true, value_name = "PATH")]
+        paths: Vec<std::path::PathBuf>,
+    },
 }
 
 /// How downscaling is decided.
@@ -286,7 +319,7 @@ mod tests {
         let cli = Cli::try_parse_from(argv).map_err(|e| e.to_string())?;
         match cli.command {
             Command::Sim(args) => build_request(&args),
-            Command::Entities => panic!("test argv should be a sim"),
+            Command::Entities | Command::Fixture { .. } => panic!("test argv should be a sim"),
         }
     }
 

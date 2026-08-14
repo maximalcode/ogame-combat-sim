@@ -12,6 +12,7 @@
 
 mod args;
 mod cli;
+mod fixture;
 mod render;
 
 use std::process::ExitCode;
@@ -19,7 +20,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use combat_core::{ReportBuilder, Simulator};
 
-use cli::{Cli, Command, SimArgs};
+use cli::{Cli, Command, FixtureCommand, SimArgs};
 
 fn main() -> ExitCode {
     // `Cli::parse` exits on its own for `--help` and for malformed argv; what
@@ -43,6 +44,11 @@ fn run(command: Command) -> Result<String, String> {
     match command {
         Command::Sim(args) => simulate(&args),
         Command::Entities => Ok(render::render_entities()),
+        Command::Fixture { action } => match action {
+            FixtureCommand::Template => Ok(fixture::template()),
+            FixtureCommand::Check { paths } => fixture::check(&paths),
+            FixtureCommand::Run { paths } => fixture::run(&paths),
+        },
     }
 }
 

@@ -22,6 +22,7 @@ num_cpus = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }
+combat-fixtures = { path = "../combat-fixtures", version = "0.1.0" }
 criterion = { workspace = true }
 serde_json = { workspace = true }
 
