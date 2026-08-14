@@ -225,6 +225,24 @@ cargo fmt --check \
 - **`build_summary_report` hardcodes `round_details: None`.** It averages a run,
   and an average has no per-round narrative. `combat-cli --rounds` therefore
   reads `results.results[0]` — one battle — and its header says so.
+- **The regression corpus is data, not code.** Every `.json` under
+  `combat-core/tests/fixtures/` is discovered, simulated and compared by
+  `combat-core/tests/regression_corpus.rs`, so adding a battle is adding a file
+  — the format is documented in that directory's `README.md`. Three things
+  about it are load-bearing. **Skips and the pass/skip tally bypass
+  `eprintln!`**, going to the raw `std::io::stderr()` handle through
+  `write_past_capture`, because libtest swallows a *passing* test's output and
+  a corpus that skipped every fixture would otherwise read as a green run;
+  `skip_records_remain_visible_under_libtest_capture` pins that by re-running
+  itself in a child process. **The envelope is `deny_unknown_fields` and the
+  `request` inside it is not** — it is a plain `CombatRequest`, deliberately,
+  so that a fixture doubles as an `/api/simulate` body; the cost is that a
+  misspelled request field is ignored, silently takes its default and quietly
+  changes the battle. And **tolerances are per fixture with a written
+  justification**, never a global constant, because variance scales with fleet
+  size. The one fixture there now is a labelled synthetic placeholder and says
+  so in its `name`, `source` and `observed_battle: false`; real reports arrive
+  via issue #17 and are rejected without `publication_consent`.
 - **Edition 2024 reserves `gen`.** That is why this uses rand 0.9
   (`random`, `random_range`, `from_os_rng`) rather than rand 0.8's `gen`.
 - **The clippy config has two halves.** Everything above the

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "name": "SYNTHETIC self-consistency placeholder — not an observed battle",
+  "provenance": {
+    "observed_battle": false,
+    "source": "Synthetic engine self-consistency placeholder for issue #40; no OGame report or player data was used",
+    "universe": "not applicable — synthetic placeholder",
+    "approximate_date": "not applicable — synthetic placeholder",
+    "game_version": "not applicable — synthetic placeholder",
+    "publication_consent": false
+  },
+  "blocked_on": null,
+  "request": {
+    "attacker": {
+      "technology": {
+        "weapon": 0,
+        "shield": 0,
+        "armour": 0
+      },
+      "entities": {
+        "214": 1
+      }
+    },
+    "defender": {
+      "technology": {
+        "weapon": 0,
+        "shield": 0,
+        "armour": 0
+      },
+      "entities": {
+        "204": 1
+      }
+    },
+    "debris_percentage": 30.0,
+    "use_rapid_fire": true,
+    "simulations": 25,
+    "enable_downscaling": false,
+    "universe_settings": null,
+    "plunder_percentage": 50
+  },
+  "observed": {
+    "outcome": "AttackersWin",
+    "attacker_losses": {},
+    "defender_losses": {
+      "204": 1
+    },
+    "debris": {
+      "metal": 900,
+      "crystal": 300,
+      "deuterium": 0
+    }
+  },
+  "tolerance": {
+    "minimum_observed_outcome_rate": 1.0,
+    "losses": {
+      "absolute": 0.0,
+      "relative": 0.0
+    },
+    "debris": {
+      "absolute": 0.0,
+      "relative": 0.0
+    },
+    "justification": "This is a deterministic synthetic smoke case: a Deathstar always destroys one Light Fighter, the fighter cannot damage it, and 30% debris is exact. Zero tolerance is intentional; real observed fixtures must justify non-zero stochastic margins."
+  }
+}

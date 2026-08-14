@@ -24,6 +24,9 @@ npm-debug.log*
 # IDEs
 .idea/
 .vscode/
+# Agent tooling. launch.json is shared and must stay machine-independent;
+# settings.local.json is one machine's permission grants and is not.
+.claude/settings.local.json
 *.swp
 *.swo
 
