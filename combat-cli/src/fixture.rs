@@ -21,13 +21,9 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use combat_core::Simulator;
-use combat_fixtures::{
-    Evaluation, Fixture, NumberCheck, TEMPLATE, discover_fixtures, load_fixture,
-};
+use combat_fixtures::{Fixture, FixtureRun, discover_fixtures, evaluate_fixture, load_fixture};
 
-pub fn template() -> String {
-    TEMPLATE.to_owned()
-}
+use crate::render::render_evaluation;
 
 pub fn check(paths: &[PathBuf]) -> Result<String, String> {
     let mut report = Report::new();
@@ -51,31 +47,32 @@ pub fn run(paths: &[PathBuf]) -> Result<String, String> {
     let mut report = Report::new();
 
     for path in paths {
-        let fixture = match load_and_validate(&path) {
+        let fixture = match load_fixture(&path) {
             Ok(fixture) => fixture,
-            Err(errors) => {
-                report.fail(&path, &errors);
+            Err(error) => {
+                report.fail(&path, &[error]);
                 continue;
             }
         };
 
-        if let Some(reason) = fixture.skip_reason() {
-            report.pass(&format!(
-                "skip {} ('{}'): {reason}",
+        // Through `evaluate_fixture` rather than by validating, skipping and
+        // comparing here: the corpus test goes the same way, and the order of
+        // those steps should exist in one place.
+        match evaluate_fixture(&fixture, |request| simulator.simulate_multiple(request)) {
+            FixtureRun::Invalid(errors) => report.fail(&path, &errors),
+            FixtureRun::Skipped(reason) => report.skip(&format!(
+                "SKIP {} ('{}'): {reason}",
                 path.display(),
                 fixture.name()
-            ));
-            continue;
-        }
-
-        let results = simulator.simulate_multiple(fixture.request());
-        let evaluation = fixture.evaluate(&results);
-        let table = render_evaluation(&path, &fixture, &evaluation);
-
-        if evaluation.failures().is_empty() {
-            report.pass(&table);
-        } else {
-            report.fail_verbatim(&table);
+            )),
+            FixtureRun::Evaluated(evaluation) => {
+                let table = render_evaluation(&path, fixture.name(), &evaluation);
+                if evaluation.failures().is_empty() {
+                    report.pass(&table);
+                } else {
+                    report.fail_verbatim(&table);
+                }
+            }
         }
     }
 
@@ -122,6 +119,7 @@ fn expand(paths: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
 struct Report {
     lines: Vec<String>,
     passed: usize,
+    skipped: usize,
     failed: usize,
 }
 
@@ -130,12 +128,22 @@ impl Report {
         Self {
             lines: Vec::new(),
             passed: 0,
+            skipped: 0,
             failed: 0,
         }
     }
 
     fn pass(&mut self, line: &str) {
         self.passed += 1;
+        self.lines.push(line.to_owned());
+    }
+
+    /// Counted apart from a pass, and stated in the summary, for the reason the
+    /// corpus test writes its skip records past libtest's capture: a fixture
+    /// that was never compared has not agreed with anything, and a run that
+    /// skipped everything must not read as a clean one.
+    fn skip(&mut self, line: &str) {
+        self.skipped += 1;
         self.lines.push(line.to_owned());
     }
 
@@ -153,18 +161,25 @@ impl Report {
     }
 
     /// `Ok` prints to stdout and exits zero; `Err` prints to stderr and exits
-    /// one. `subject` completes "all N fixtures ...".
+    /// one. `subject` completes "N fixtures ...".
     fn finish(self, subject: &str) -> Result<String, String> {
         let body = format!("{}\n", self.lines.join("\n\n"));
-        let total = self.passed + self.failed;
-        let counted = plural(total);
+        let total = self.passed + self.skipped + self.failed;
+        let skipped = match self.skipped {
+            0 => String::new(),
+            count => format!(", {count} skipped"),
+        };
 
         if self.failed == 0 {
-            return Ok(format!("{body}\nall {counted} {subject}\n"));
+            return Ok(format!(
+                "{body}\n{} {subject}{skipped}\n",
+                plural(self.passed)
+            ));
         }
         Err(format!(
-            "{} of {counted} did not pass\n\n{body}",
-            self.failed
+            "{} of {} did not pass{skipped}\n\n{body}",
+            self.failed,
+            plural(total)
         ))
     }
 }
@@ -175,70 +190,6 @@ fn plural(count: usize) -> String {
     } else {
         format!("{count} fixtures")
     }
-}
-
-// One layout for the header and its rows, so the two cannot drift. A macro
-// rather than a const because a format string must be a literal where it is
-// used — the same reason render.rs states its tables this way.
-macro_rules! metric_row {
-    ($out:expr, $($cell:expr),+ $(,)?) => {
-        let _ = writeln!($out, "  {:<26} {:>14} {:>14} {:>12} {:>12}  {:<21} {}", $($cell),+);
-    };
-}
-
-fn render_evaluation(path: &Path, fixture: &Fixture, evaluation: &Evaluation) -> String {
-    let mut out = String::new();
-    let outcome = &evaluation.outcome;
-
-    let _ = writeln!(out, "{} ('{}')", path.display(), fixture.name());
-    let _ = writeln!(
-        out,
-        "  outcome {:?} in {:.2}% of runs, needs {:.2}%  {}",
-        outcome.expected,
-        outcome.observed_rate * 100.0,
-        outcome.required_rate * 100.0,
-        verdict(outcome.passed())
-    );
-
-    metric_row!(
-        out,
-        "metric",
-        "observed",
-        "simulated",
-        "difference",
-        "allowed",
-        "per-battle range",
-        ""
-    );
-
-    for check in &evaluation.numbers {
-        metric_row!(
-            out,
-            check.label,
-            format!("{:.3}", check.expected),
-            format!("{:.3}", check.simulated),
-            format!("{:.3}", check.difference()),
-            format!("{:.3}", check.allowed),
-            range(check),
-            verdict(check.passed())
-        );
-    }
-
-    out
-}
-
-/// The spread across individual battles, which is the evidence a
-/// `tolerance.justification` is supposed to rest on.
-fn range(check: &NumberCheck) -> String {
-    if check.minimum.is_finite() && check.maximum.is_finite() {
-        format!("{:.0} – {:.0}", check.minimum, check.maximum)
-    } else {
-        "no battles".to_owned()
-    }
-}
-
-fn verdict(passed: bool) -> &'static str {
-    if passed { "ok" } else { "OVER TOLERANCE" }
 }
 
 #[cfg(test)]
@@ -311,5 +262,25 @@ mod tests {
     fn one_fixture_is_not_reported_as_1_fixtures() {
         assert_eq!(plural(1), "1 fixture");
         assert_eq!(plural(2), "2 fixtures");
+    }
+
+    // A skipped fixture was never compared against anything, so a run that
+    // skipped one must not summarise as though it had. The corpus test goes to
+    // the trouble of writing its skip records past libtest's capture for the
+    // same reason.
+    #[test]
+    fn a_skipped_fixture_is_not_counted_as_one_that_matched() {
+        let mut report = Report::new();
+        report.pass("ok   one.json");
+        report.skip("SKIP two.json ('blocked'): blocked on 'instant-calc'");
+
+        let summary = report
+            .finish("matched their recorded battle")
+            .expect("a skip is not a failure");
+
+        assert!(
+            summary.ends_with("1 fixture matched their recorded battle, 1 skipped\n"),
+            "{summary}"
+        );
     }
 }

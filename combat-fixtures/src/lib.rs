@@ -14,9 +14,12 @@
 //!
 //! Nothing here depends on `combat-core`. [`run_fixture`] takes a closure that
 //! produces [`CombatResults`], so validating a fixture never installs the
-//! global rayon thread pool that [`combat_core::Simulator::new`] would.
+//! global rayon thread pool that `Simulator::new` would.
 
-use combat_types::{CombatOutcome, CombatRequest, CombatResults, DebrisField, FleetComposition};
+use combat_types::names::name_of;
+use combat_types::{
+    CombatOutcome, CombatRequest, CombatResults, DebrisField, EntityType, FleetComposition,
+};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -24,7 +27,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// The only fixture schema this crate understands.
-pub const SCHEMA_VERSION: u8 = 1;
+const SCHEMA_VERSION: u8 = 1;
 
 /// A ready-to-edit fixture, as printed by `combat-cli fixture template`.
 pub const TEMPLATE: &str = include_str!("template.json");
@@ -39,8 +42,9 @@ const PLACEHOLDER_MARKER: &str = "FILL IN";
 ///
 /// The envelope is `deny_unknown_fields`; the `request` inside it deliberately
 /// is not, because it is a plain [`CombatRequest`] and a fixture doubles as a
-/// `POST /api/simulate` body. [`ignored_request_fields`] is what covers the
-/// hole that leaves.
+/// `POST /api/simulate` body. `ignored_request_fields` is what covers the hole
+/// that leaves; it runs at parse time and its findings surface through
+/// [`Fixture::validation_errors`].
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Fixture {
@@ -164,6 +168,8 @@ impl Fixture {
             ));
         }
 
+        errors.extend(self.unknown_entity_errors());
+
         errors.extend(rate_error(
             "tolerance.minimum_observed_outcome_rate",
             self.tolerance.minimum_observed_outcome_rate,
@@ -187,6 +193,61 @@ impl Fixture {
         }
 
         errors
+    }
+
+    /// Entity ids that name no ship or defence.
+    ///
+    /// The same class of defect as a misspelled request field, and just as
+    /// quiet: `FleetComposition` is a map, so `"2014": 30` for `"214": 30` is a
+    /// well-formed fixture describing thirty of something that does not exist.
+    /// The engine has no stats for it and it simply never fights.
+    fn unknown_entity_errors(&self) -> Vec<String> {
+        let mut fleets: Vec<(String, &FleetComposition)> = vec![
+            (
+                "request.attacker.entities".to_string(),
+                &self.request.attacker.entities,
+            ),
+            (
+                "request.defender.entities".to_string(),
+                &self.request.defender.entities,
+            ),
+            (
+                "observed.attacker_losses".to_string(),
+                &self.observed.attacker_losses,
+            ),
+            (
+                "observed.defender_losses".to_string(),
+                &self.observed.defender_losses,
+            ),
+        ];
+
+        // A slot carries a whole party, so a mistyped id hides there too.
+        for (field, slots) in [
+            ("attacker_slots", &self.request.attacker_slots),
+            ("defender_slots", &self.request.defender_slots),
+        ] {
+            for (index, slot) in slots.iter().flatten().enumerate() {
+                fleets.push((
+                    format!("request.{field}[{index}].data.entities"),
+                    &slot.data.entities,
+                ));
+            }
+        }
+
+        fleets
+            .into_iter()
+            .flat_map(|(field, fleet)| {
+                let mut unknown: Vec<EntityType> = fleet
+                    .keys()
+                    .copied()
+                    .filter(|id| name_of(*id).is_none())
+                    .collect();
+                unknown.sort_unstable();
+                unknown
+                    .into_iter()
+                    .map(move |id| format!("{field}.{id} is not an entity this simulator knows"))
+            })
+            .collect()
     }
 
     /// Every free-text field a human writes, paired with its path in the file.
@@ -245,12 +306,48 @@ impl Fixture {
             |result| &result.defender_losses,
             &self.tolerance.losses,
         ));
-        numbers.extend(compare_debris(self, results));
+        numbers.extend(self.compare_debris(results));
 
         Evaluation {
-            outcome: compare_outcome(self, results),
+            outcome: self.compare_outcome(results),
             numbers,
         }
+    }
+
+    fn compare_outcome(&self, results: &CombatResults) -> OutcomeCheck {
+        let matching = match self.observed.outcome {
+            CombatOutcome::AttackersWin => results.attacker_wins,
+            CombatOutcome::DefendersWin => results.defender_wins,
+            CombatOutcome::Draw => results.draws,
+        };
+
+        OutcomeCheck {
+            expected: self.observed.outcome.clone(),
+            observed_rate: f64::from(matching) / f64::from(results.simulations),
+            required_rate: self.tolerance.minimum_observed_outcome_rate,
+        }
+    }
+
+    fn compare_debris(&self, results: &CombatResults) -> Vec<NumberCheck> {
+        let observed = &self.observed.debris;
+        let samples = debris_samples(results);
+
+        [
+            ("metal", observed.metal, &samples.metal),
+            ("crystal", observed.crystal, &samples.crystal),
+            ("deuterium", observed.deuterium, &samples.deuterium),
+        ]
+        .into_iter()
+        .map(|(resource, expected, series)| {
+            number_check(
+                format!("debris.{resource}"),
+                expected as f64,
+                series,
+                results.simulations,
+                &self.tolerance.debris,
+            )
+        })
+        .collect()
     }
 }
 
@@ -391,40 +488,65 @@ pub fn load_fixture(path: &Path) -> Result<Fixture, String> {
 
 /// Parse a fixture from JSON text.
 ///
-/// The only way to build a [`Fixture`] outside this crate, deliberately: it is
+/// Private, and [`load_fixture`] is the only caller, deliberately: this is
 /// where [`ignored_request_fields`] runs, and a `Fixture` deserialized any
 /// other way would report no ignored fields whether or not it had any.
-pub fn parse_fixture(json: &str) -> Result<Fixture, String> {
+fn parse_fixture(json: &str) -> Result<Fixture, String> {
     let mut fixture: Fixture =
         serde_json::from_str(json).map_err(|error| format!("invalid fixture JSON: {error}"))?;
     fixture.ignored_request_fields = ignored_request_fields(json)?;
     Ok(fixture)
 }
 
+/// How far a fixture got: rejected before simulating, skipped, or compared.
+///
+/// [`FixtureStatus`] is this reduced to pass/fail, which is all the corpus test
+/// wants. `combat-cli fixture run` wants the [`Evaluation`] itself, because it
+/// prints every comparison rather than only the failing ones — so the order of
+/// the checks lives in [`evaluate_fixture`] alone and both callers inherit it.
+#[derive(Debug)]
+pub enum FixtureRun {
+    Invalid(Vec<String>),
+    Skipped(String),
+    Evaluated(Evaluation),
+}
+
 /// Validate, then either skip or simulate and compare.
 ///
 /// `simulate` is a closure rather than a `Simulator` so this crate stays off
 /// `combat-core`; see the module docs.
+pub fn evaluate_fixture(
+    fixture: &Fixture,
+    simulate: impl FnOnce(&CombatRequest) -> CombatResults,
+) -> FixtureRun {
+    let validation_errors = fixture.validation_errors();
+    if !validation_errors.is_empty() {
+        return FixtureRun::Invalid(validation_errors);
+    }
+
+    if let Some(reason) = fixture.skip_reason() {
+        return FixtureRun::Skipped(reason);
+    }
+
+    FixtureRun::Evaluated(fixture.evaluate(&simulate(&fixture.request)))
+}
+
+/// [`evaluate_fixture`] reduced to pass, skip or fail.
 pub fn run_fixture(
     fixture: &Fixture,
     simulate: impl FnOnce(&CombatRequest) -> CombatResults,
 ) -> FixtureStatus {
-    let validation_errors = fixture.validation_errors();
-    if !validation_errors.is_empty() {
-        return FixtureStatus::Failed(validation_errors);
-    }
-
-    if let Some(reason) = fixture.skip_reason() {
-        return FixtureStatus::Skipped(reason);
-    }
-
-    let results = simulate(&fixture.request);
-    let discrepancies = fixture.evaluate(&results).failures();
-
-    if discrepancies.is_empty() {
-        FixtureStatus::Passed
-    } else {
-        FixtureStatus::Failed(discrepancies)
+    match evaluate_fixture(fixture, simulate) {
+        FixtureRun::Invalid(errors) => FixtureStatus::Failed(errors),
+        FixtureRun::Skipped(reason) => FixtureStatus::Skipped(reason),
+        FixtureRun::Evaluated(evaluation) => {
+            let discrepancies = evaluation.failures();
+            if discrepancies.is_empty() {
+                FixtureStatus::Passed
+            } else {
+                FixtureStatus::Failed(discrepancies)
+            }
+        }
     }
 }
 
@@ -441,7 +563,7 @@ pub fn run_fixture(
 /// `skip_serializing_if` does that, and every predicate on `CombatRequest`
 /// drops exactly one of null or empty, so a raw value that is null or empty is
 /// not evidence the key was misunderstood.
-pub fn ignored_request_fields(json: &str) -> Result<Vec<String>, String> {
+fn ignored_request_fields(json: &str) -> Result<Vec<String>, String> {
     let envelope: Value =
         serde_json::from_str(json).map_err(|error| format!("invalid fixture JSON: {error}"))?;
     let Some(raw_request) = envelope.get("request") else {
@@ -459,7 +581,40 @@ pub fn ignored_request_fields(json: &str) -> Result<Vec<String>, String> {
     Ok(ignored)
 }
 
+/// Field names `CombatRequest` drops on the way out, so their absence from the
+/// round trip says nothing about whether they were understood.
+///
+/// A list rather than a test on the value, because `"universe_setings": null`
+/// is a typo and looks exactly like a skipped `Option`. Matched on the leaf key
+/// so `lifeform` is covered wherever a party appears, slots included.
+/// `fields_serde_skips_on_output_are_not_mistaken_for_typos` is what fails if a
+/// new `skip_serializing_if` arrives without being added here.
+const FIELDS_SKIPPED_ON_OUTPUT: [&str; 4] = [
+    "attacker_slots",
+    "defender_slots",
+    "lifeform",
+    // `PartySlot::name`. Only reachable inside a slot, where nothing else is
+    // called `name`.
+    "name",
+];
+
 fn collect_ignored_keys(raw: &Value, understood: &Value, prefix: &str, ignored: &mut Vec<String>) {
+    // Arrays hold structs too — `attacker_slots` is a `Vec<PartySlot>`, and a
+    // misspelling inside one defaults just as silently as a top-level one.
+    if let (Value::Array(raw_items), Value::Array(understood_items)) = (raw, understood) {
+        for (index, (raw_item, understood_item)) in
+            raw_items.iter().zip(understood_items).enumerate()
+        {
+            collect_ignored_keys(
+                raw_item,
+                understood_item,
+                &format!("{prefix}[{index}]"),
+                ignored,
+            );
+        }
+        return;
+    }
+
     let (Some(raw_fields), Some(understood_fields)) = (raw.as_object(), understood.as_object())
     else {
         return;
@@ -476,33 +631,9 @@ fn collect_ignored_keys(raw: &Value, understood: &Value, prefix: &str, ignored: 
             Some(understood_value) => {
                 collect_ignored_keys(raw_value, understood_value, &path, ignored);
             }
-            // Absent from the round trip, but a `skip_serializing_if` predicate
-            // would have removed it too — not evidence of a typo.
-            None if is_skippable(raw_value) => {}
+            None if FIELDS_SKIPPED_ON_OUTPUT.contains(&key.as_str()) => {}
             None => ignored.push(path),
         }
-    }
-}
-
-fn is_skippable(value: &Value) -> bool {
-    match value {
-        Value::Null => true,
-        Value::Object(fields) => fields.is_empty(),
-        _ => false,
-    }
-}
-
-fn compare_outcome(fixture: &Fixture, results: &CombatResults) -> OutcomeCheck {
-    let matching = match fixture.observed.outcome {
-        CombatOutcome::AttackersWin => results.attacker_wins,
-        CombatOutcome::DefendersWin => results.defender_wins,
-        CombatOutcome::Draw => results.draws,
-    };
-
-    OutcomeCheck {
-        expected: fixture.observed.outcome.clone(),
-        observed_rate: f64::from(matching) / f64::from(results.simulations),
-        required_rate: fixture.tolerance.minimum_observed_outcome_rate,
     }
 }
 
@@ -562,28 +693,6 @@ fn debris_samples(results: &CombatResults) -> DebrisSamples {
     }
 
     samples
-}
-
-fn compare_debris(fixture: &Fixture, results: &CombatResults) -> Vec<NumberCheck> {
-    let observed = &fixture.observed.debris;
-    let samples = debris_samples(results);
-
-    [
-        ("metal", observed.metal, &samples.metal),
-        ("crystal", observed.crystal, &samples.crystal),
-        ("deuterium", observed.deuterium, &samples.deuterium),
-    ]
-    .into_iter()
-    .map(|(resource, expected, series)| {
-        number_check(
-            format!("debris.{resource}"),
-            expected as f64,
-            series,
-            results.simulations,
-            &fixture.tolerance.debris,
-        )
-    })
-    .collect()
 }
 
 fn number_check(
@@ -714,14 +823,17 @@ mod tests {
 
     // The round-trip check would report a false positive for any field serde
     // drops on the way out. These are every one that exists today; if a new
-    // `skip_serializing_if` appears on `CombatRequest`, this fails.
+    // `skip_serializing_if` appears on `CombatRequest` or the types below it,
+    // this fails, and the fix is to add the name to FIELDS_SKIPPED_ON_OUTPUT.
     #[test]
     fn fields_serde_skips_on_output_are_not_mistaken_for_typos() {
         let json = fixture_json(
             r#"{
                  "attacker": { "technology": {}, "entities": {}, "lifeform": {} },
                  "defender": { "technology": {}, "entities": {} },
-                 "attacker_slots": null,
+                 "attacker_slots": [
+                   { "id": "A1", "name": null, "data": { "technology": {}, "entities": {} } }
+                 ],
                  "defender_slots": null,
                  "use_rapid_fire": true,
                  "simulations": 25
@@ -731,6 +843,65 @@ mod tests {
         assert_eq!(
             ignored_request_fields(&json).expect("the fixture should parse"),
             Vec::<String>::new()
+        );
+    }
+
+    // A slot holds a whole `PartyData`, and neither it nor `PartySlot` is
+    // `deny_unknown_fields`, so a misspelling inside one defaults just as
+    // quietly as a top-level one. The check has to descend through the array to
+    // see it.
+    #[test]
+    fn a_misspelling_inside_a_slot_is_reported_with_its_index() {
+        let json = fixture_json(
+            r#"{
+                 "attacker": { "technology": {}, "entities": {} },
+                 "defender": { "technology": {}, "entities": {} },
+                 "attacker_slots": [
+                   { "id": "A1", "data": { "technology": {}, "entities": {} } },
+                   { "id": "A2", "data": { "technology": { "weapons": 12 }, "entities": {} } }
+                 ],
+                 "use_rapid_fire": true,
+                 "simulations": 25
+               }"#,
+        );
+
+        assert_eq!(
+            ignored_request_fields(&json).expect("the fixture should parse"),
+            vec!["attacker_slots[1].data.technology.weapons".to_string()]
+        );
+    }
+
+    // A misspelled key set to null is indistinguishable from a skipped
+    // `Option` by value alone, which is why the carve-out is a list of names.
+    #[test]
+    fn a_misspelled_field_set_to_null_is_still_reported() {
+        let json = fixture_json(&request_json(r#""universe_setings": null"#));
+
+        assert_eq!(
+            ignored_request_fields(&json).expect("the fixture should parse"),
+            vec!["universe_setings".to_string()]
+        );
+    }
+
+    #[test]
+    fn an_entity_id_that_names_no_ship_is_rejected() {
+        let json = fixture_json(
+            r#"{
+                 "attacker": { "technology": {}, "entities": { "2014": 30 } },
+                 "defender": { "technology": {}, "entities": { "401": 5 } },
+                 "use_rapid_fire": true,
+                 "simulations": 25
+               }"#,
+        );
+        let errors = parse_fixture(&json)
+            .expect("the fixture should parse")
+            .validation_errors();
+
+        assert!(
+            errors.contains(
+                &"request.attacker.entities.2014 is not an entity this simulator knows".to_string()
+            ),
+            "expected the unknown entity id to be rejected, got {errors:?}"
         );
     }
 

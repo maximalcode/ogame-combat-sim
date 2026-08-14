@@ -51,8 +51,16 @@ serde ignores unknown keys inside it rather than rejecting them. A misspelled
 request field would therefore fall back to a default and silently change the
 battle. Validation closes that hole separately, by parsing the request,
 serializing it back, and reporting any key that did not survive the round trip
-— so `weapons` for `weapon` fails with its full path instead of quietly
-fighting at level zero.
+— so `weapons` for `weapon` fails as
+`request.attacker.technology.weapons` instead of quietly fighting at level
+zero. It descends into slot arrays, and a key set to `null` is reported like
+any other, because a misspelling and a skipped `Option` look identical by
+value.
+
+A mistyped **entity id** is the same defect wearing different clothes: fleets
+are maps, so `"2014": 30` is a well-formed fixture describing thirty of
+something that has no stats and never fights. Every id in a request fleet and
+in `observed`'s loss tables is checked against the entity table.
 
 ## Writing one
 
@@ -74,9 +82,11 @@ guess.
 
 `observed_battle` must be `true` for a real report. A real report is rejected
 unless `publication_consent` is also `true`. In particular, never add another
-player's report without their permission. A synthetic format example must set
-both fields to `false`, say that it is synthetic in `source` and `name`, and
-must not contain data presented as a live observation.
+player's report without their permission. `fixture template` ships both fields
+`false` for that reason — setting them is the affirmative act, and a template
+that arrived pre-checked would be recording nobody's decision. A synthetic
+format example leaves them `false`, says that it is synthetic in `source` and
+`name`, and must not contain data presented as a live observation.
 
 ## Tolerances and failures
 

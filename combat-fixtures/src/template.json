@@ -2,12 +2,12 @@
   "schema_version": 1,
   "name": "FILL IN: short unique description, e.g. 'battleship wave into a fully built shipyard moon'",
   "provenance": {
-    "observed_battle": true,
-    "source": "FILL IN: where this report came from, with no private player data",
+    "observed_battle": false,
+    "source": "FILL IN: where this report came from, with no private player data. Set observed_battle to true once it is a real report, and publication_consent to true only once whoever fought it has agreed to it being published",
     "universe": "FILL IN: universe name or identifier",
     "approximate_date": "FILL IN: YYYY-MM, or another honest approximation",
     "game_version": "FILL IN: the version shown or known at the time",
-    "publication_consent": true
+    "publication_consent": false
   },
   "blocked_on": null,
   "request": {

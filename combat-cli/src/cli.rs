@@ -1,7 +1,8 @@
 //! The command line surface, and the translation from it into a
 //! [`CombatRequest`].
 //!
-//! Two subcommands: `sim` runs a battle, `entities` prints the stat table.
+//! Three subcommands: `sim` runs a battle, `entities` prints the stat table,
+//! and `fixture` writes and checks regression-corpus fixtures.
 //!
 //! `sim` takes a battle either as flags or as a JSON file. The JSON path is a
 //! straight `serde_json::from_str::<CombatRequest>` — the same body
@@ -55,20 +56,21 @@ pub enum FixtureCommand {
     ///
     /// Catches a misspelled field inside "request", which is otherwise ignored
     /// in silence and changes the battle the fixture describes.
-    Check {
-        /// Fixture files, or directories to search for them.
-        #[arg(required = true, value_name = "PATH")]
-        paths: Vec<std::path::PathBuf>,
-    },
+    Check(FixturePaths),
     /// Validate, simulate, and print observed against simulated.
     ///
     /// The per-battle range in each row is what a tolerance justification
     /// should be written from.
-    Run {
-        /// Fixture files, or directories to search for them.
-        #[arg(required = true, value_name = "PATH")]
-        paths: Vec<std::path::PathBuf>,
-    },
+    Run(FixturePaths),
+}
+
+/// What `check` and `run` both operate on. One type so the two cannot come to
+/// accept different things.
+#[derive(Debug, Args)]
+pub struct FixturePaths {
+    /// Fixture files, or directories to search for them.
+    #[arg(required = true, value_name = "PATH")]
+    pub paths: Vec<std::path::PathBuf>,
 }
 
 /// How downscaling is decided.

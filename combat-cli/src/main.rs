@@ -4,6 +4,9 @@
 //! combat-cli sim -a "cruiser:100,lf:50" -d "lf:1000" --tech 10 -n 1000
 //! combat-cli sim --file battle.json
 //! combat-cli entities
+//! combat-cli fixture template
+//! combat-cli fixture check combat-core/tests/fixtures
+//! combat-cli fixture run combat-core/tests/fixtures
 //! ```
 //!
 //! The engine is a library and a stateless HTTP server; this is the third way
@@ -45,9 +48,9 @@ fn run(command: Command) -> Result<String, String> {
         Command::Sim(args) => simulate(&args),
         Command::Entities => Ok(render::render_entities()),
         Command::Fixture { action } => match action {
-            FixtureCommand::Template => Ok(fixture::template()),
-            FixtureCommand::Check { paths } => fixture::check(&paths),
-            FixtureCommand::Run { paths } => fixture::run(&paths),
+            FixtureCommand::Template => Ok(combat_fixtures::TEMPLATE.to_owned()),
+            FixtureCommand::Check(args) => fixture::check(&args.paths),
+            FixtureCommand::Run(args) => fixture::run(&args.paths),
         },
     }
 }
