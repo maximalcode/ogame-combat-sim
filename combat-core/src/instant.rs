@@ -45,21 +45,27 @@
 //!
 //! - **250 Light Fighters against one Large Shield Dome.** That is
 //!   `combat-core/tests/common/mod.rs`, the fixture the stat-modifier tests
-//!   share. The fighters are worth 12,500 attack power and the dome is worth 1,
-//!   so the ratio is met twelve times over — but at Weapons 9 a fighter's shot
-//!   is 95, under 1% of the dome's 10,000 shield, so every shot bounces and the
-//!   correct answer is six rounds ending in a draw with nobody having lost
-//!   anything. An instant calculation on the ratio alone would report the dome
-//!   destroyed.
+//!   share, run at Weapons 9: a fighter's shot is 95 there, so 250 of them are
+//!   worth 23,750 attack power against the dome's own 1. The ratio is met —
+//!   2.4 times over the 10,000 threshold — but 95 is under 1% of the dome's
+//!   10,000 shield, so every shot bounces and the correct answer is six rounds
+//!   ending in a draw with nobody having lost anything. An instant calculation
+//!   on the ratio alone would report the dome destroyed.
 //! - **One Solar Satellite against one Espionage Probe.** The probe's attack
 //!   power is 0, so the ratio is met by any armed opponent whatsoever. The
 //!   satellite's shot is worth 1 and the probe has 100 hull: six rounds leave
 //!   the probe alive on 94 hull, which is a draw, not an annihilation.
-//! - **Fifty Rocket Launchers against a million Light Fighters.** 50,000,000
-//!   attack power against 4,000 clears the threshold, and the fighters do win —
-//!   but the launchers fire fifty shots of 80 into a shield of 10, and about
-//!   fifty fighters do not come home. "The winner loses nothing" is false here,
-//!   and it is false by more the closer the ratio sits to the threshold.
+//! - **600,001 Light Fighters against one Plasma Turret.** 30,000,050 attack
+//!   power against 3,000 clears the threshold — barely, which is the point:
+//!   600,000 fighters would be exactly ten thousand times over and the
+//!   changelog says "more than", so one more is what it takes — and the
+//!   fighters do win. But the turret gets one shot of 3,000 in before it dies,
+//!   which lands on whichever fighter's 10 shield it is aimed at for thousands
+//!   of times the shield's worth, and the fought battle costs the attacker
+//!   exactly one fighter (`cargo run -p combat-cli -- sim -a "lf:600001" -d
+//!   "plasmaturret:1" --tech 0 -n 1 --rounds` puts it on the board). "The
+//!   winner loses nothing" is false here, and a ratio-only rule would have
+//!   reported zero.
 //!
 //! So the ratio is the gate, and three further conditions — each one read
 //! straight off the engine's own damage rule rather than invented — decide
@@ -86,15 +92,36 @@
 //! and shots land on units that are already dead. Rather than invent a second
 //! constant, it reuses the one the changelog supplies —
 //! [`WIPE_CERTAINTY_MARGIN`] is [`INSTANT_CALCULATION_RATIO`] — and the reuse
-//! is conservative by construction: too small a margin means the battle gets
-//! simulated, which is the correct answer arrived at the slow way. With it, the
-//! stat table bounds the waste: the frailest thing in the game has 100
-//! hitpoints and the hardest shot in it is a Deathstar's 200,000, so a winner
-//! that brings ten thousand times the loser's hitpoints is bringing at least
-//! five shots per enemy unit per round however it is composed, and six rounds
-//! of five shots each leave nothing standing. What the margin cannot be is
-//! *proved*, and `no_battle_the_rule_decides_disagrees_with_the_battle_it_replaces`
-//! is the answer to that: fleets nobody chose, fought both ways.
+//! is conservative by construction: the condition is `attack_power >= MARGIN *
+//! loser.hitpoints`, so a *larger* margin is a *harder* bar to clear, and too
+//! large a margin means the battle gets simulated more often than it strictly
+//! needed to — the correct answer, arrived at the slow way. The dangerous
+//! direction is the other one: too small a margin would call a wipe-out
+//! certain when six rounds of shots wasted on the already-dead would actually
+//! have left something standing. Reusing the changelog's 10,000× — a figure
+//! this module did not get to pick to be conveniently large — rather than
+//! inventing something smaller for the purpose keeps the margin on the safe
+//! side of that line.
+//!
+//! With it, the stat table bounds the waste, at Weapons 0: the frailest thing
+//! in the game has 100 hitpoints and the hardest *base* shot in the table is a
+//! Deathstar's 200,000, so a winner that brings ten thousand times the loser's
+//! hitpoints in base weapon damage is bringing at least five shots per enemy
+//! unit per round however it is composed, and six rounds of five shots each
+//! leave nothing standing. That specific arithmetic does not survive
+//! technology: [`SideProfile::of`] reads *effective* weapon power, and a
+//! Deathstar at Weapons 255 fires 5,300,000 rather than 200,000, which loosens
+//! the same condition to as little as 5.3 loser units per winner unit — 0.19
+//! shots per enemy unit per round, not five. The conclusion is not shown to
+//! survive by this counting argument at tech the type system allows; what
+//! carries it there instead is that a side clearing the margin at that kind of
+//! weapon power is landing hits that are themselves enormously overkill per
+//! target, one-shotting whatever they touch rather than needing several
+//! rounds of accumulated damage — a different argument, and one this module
+//! does not attempt to make precise. What the margin cannot be, at any tech
+//! level, is *proved*, and
+//! `no_battle_the_rule_decides_disagrees_with_the_battle_it_replaces` is the
+//! answer to that: fleets nobody chose, fought both ways.
 
 use crate::combat::Party;
 
@@ -361,8 +388,8 @@ mod tests {
     }
 
     /// The bounce rule, which is the condition the shared fixture's battle
-    /// forced: a side that out-powers a Large Shield Dome twelve thousand times
-    /// over may still be unable to scratch it.
+    /// forced: a side that clears the ratio against a Large Shield Dome may
+    /// still be unable to scratch it.
     ///
     /// The attackers here carry a Battleship's 200 shield rather than a Light
     /// Fighter's 10, so that the dome's own shot of 1 bounces and the answer

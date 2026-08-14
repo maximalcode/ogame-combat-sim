@@ -181,12 +181,13 @@ cargo fmt --check \
   sides, every unit's *effective* weapon damage summed, read off the `Entity`
   values the round loop shoots with so technology, class levels and lifeform
   percentages are all in it, and **defences count towards a defender's**, they
-  shoot. But the ratio alone contradicts this engine's own rounds: 250 Light
-  Fighters out-power a Large Shield Dome twelve thousand times over and at
-  Weapons 9 cannot scratch it — that is `tests/common/mod.rs`, the shared
-  fixture, and a short-circuit on the ratio alone would report the dome
-  destroyed. So three further conditions, each read off `apply_damage_fast`
-  rather than invented, have to hold as well: the loser's shots must bounce off
+  shoot. But the ratio alone contradicts this engine's own rounds: at Weapons
+  9, 250 Light Fighters are worth 23,750 attack power against a Large Shield
+  Dome's 1 — 2.4 times over the 10,000 threshold — and still cannot scratch
+  it. That is `tests/common/mod.rs`, the shared fixture, and a short-circuit
+  on the ratio alone would report the dome destroyed. So three further
+  conditions, each read off `apply_damage_fast` rather than invented, have to
+  hold as well: the loser's shots must bounce off
   the winner entirely, the winner's must register on everything the loser has,
   and the winner's firepower must clear the loser's total hitpoints by the same
   10,000× margin — the changelog's own number, reused rather than a second

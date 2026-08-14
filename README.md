@@ -31,8 +31,10 @@ The engine implements OGame's combat resolution as it actually behaves:
   scale and extrapolated, so a fleet of any size resolves in reasonable time
 - **Instant calculation** — v13's entry rule: a side with more than 10,000 times
   the opposition's combined attack power can win the battle without it being
-  fought. A fleet of espionage probes is not an automatic loss, it is simply
-  outgunned
+  fought. A fleet of espionage probes is not an automatic loss — it cannot win
+  against an armed opponent, but a hundred of them against a single Rocket
+  Launcher is a draw, not a defeat, because the launcher only fires once a
+  round
 
 ## Accuracy — what is and is not modelled
 
@@ -49,10 +51,15 @@ What is **not** yet applied:
 
 v13's instant calculation is implemented, and on less than the game applies it
 to. The 10,000× ratio is the gate; a battle only skips its rounds if the engine
-can also show that the losing side cannot take a single unit with it and that
-the winning side's fire actually gets through. Everything else is simulated —
-slower, and the same answer. The one visible consequence is the round count: a
-battle decided this way honestly reports zero rounds fought.
+can also show that the losing side cannot take a single unit with it, that the
+winning side's fire actually gets through, and that the winning side's
+firepower clears the losing side's total hitpoints by the same 10,000× margin
+— the condition that declines the most battles, including a Solar Satellite
+against a lone Espionage Probe: the ratio is met by any armed opponent at all,
+but six rounds of the satellite's single point of damage a round leave the
+probe short of destroyed. Everything else is simulated — slower, and the same
+answer. The one visible consequence is the round count: a battle decided this
+way honestly reports zero rounds fought.
 
 One thing outside combat itself is missing too, and it changes what an attack
 costs: destroyed defences are never rebuilt here, where the game gives each one
