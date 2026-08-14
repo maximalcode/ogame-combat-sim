@@ -253,6 +253,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "combat-core",
+ "combat-fixtures",
  "combat-types",
  "serde_json",
  "serde_path_to_error",
@@ -263,11 +264,21 @@ name = "combat-core"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "combat-fixtures",
  "combat-types",
  "criterion",
  "num_cpus",
  "rand 0.9.5",
  "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "combat-fixtures"
+version = "0.1.0"
+dependencies = [
+ "combat-types",
  "serde",
  "serde_json",
 ]

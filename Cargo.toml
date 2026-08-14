@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "combat-core",
     "combat-types",
+    "combat-fixtures",
     "combat-api",
     "combat-cli",
     "combat-ogame-api",

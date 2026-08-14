@@ -1,7 +1,8 @@
 //! The command line surface, and the translation from it into a
 //! [`CombatRequest`].
 //!
-//! Two subcommands: `sim` runs a battle, `entities` prints the stat table.
+//! Three subcommands: `sim` runs a battle, `entities` prints the stat table,
+//! and `fixture` writes and checks regression-corpus fixtures.
 //!
 //! `sim` takes a battle either as flags or as a JSON file. The JSON path is a
 //! straight `serde_json::from_str::<CombatRequest>` — the same body
@@ -36,6 +37,40 @@ pub enum Command {
     Sim(Box<SimArgs>),
     /// List every entity the simulator knows: id, name, aliases and stats.
     Entities,
+    /// Write and check regression-corpus fixtures from real combat reports.
+    Fixture {
+        #[command(subcommand)]
+        action: FixtureCommand,
+    },
+}
+
+/// What to do with a fixture.
+///
+/// These run the checks the corpus test runs, from `combat-fixtures`, so a
+/// fixture that passes here passes in CI.
+#[derive(Debug, Subcommand)]
+pub enum FixtureCommand {
+    /// Print a fixture skeleton to fill in, ready to redirect into a file.
+    Template,
+    /// Validate fixtures without simulating them.
+    ///
+    /// Catches a misspelled field inside "request", which is otherwise ignored
+    /// in silence and changes the battle the fixture describes.
+    Check(FixturePaths),
+    /// Validate, simulate, and print observed against simulated.
+    ///
+    /// The per-battle range in each row is what a tolerance justification
+    /// should be written from.
+    Run(FixturePaths),
+}
+
+/// What `check` and `run` both operate on. One type so the two cannot come to
+/// accept different things.
+#[derive(Debug, Args)]
+pub struct FixturePaths {
+    /// Fixture files, or directories to search for them.
+    #[arg(required = true, value_name = "PATH")]
+    pub paths: Vec<std::path::PathBuf>,
 }
 
 /// How downscaling is decided.
@@ -286,7 +321,7 @@ mod tests {
         let cli = Cli::try_parse_from(argv).map_err(|e| e.to_string())?;
         match cli.command {
             Command::Sim(args) => build_request(&args),
-            Command::Entities => panic!("test argv should be a sim"),
+            Command::Entities | Command::Fixture { .. } => panic!("test argv should be a sim"),
         }
     }
 

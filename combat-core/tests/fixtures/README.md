@@ -42,17 +42,51 @@ so the format and runner can be exercised before issue #17 supplies real data.
 ```
 
 All fixture-envelope fields shown are required except `blocked_on`, which may
-be omitted or `null`. The embedded `request` deliberately uses
-`CombatRequest`'s API-compatible deserialization behavior: unknown keys inside
-it are ignored. Check request-field spellings carefully, because a typo there
-can otherwise fall back to a default and change the battle. Entity IDs are JSON
-object keys and therefore strings, just as they are in an API request.
+be omitted or `null`. Entity IDs are JSON object keys and therefore strings,
+just as they are in an API request.
+
+The embedded `request` deliberately keeps `CombatRequest`'s API-compatible
+deserialization behavior, so a fixture doubles as a `POST /api/simulate` body:
+serde ignores unknown keys inside it rather than rejecting them. A misspelled
+request field would therefore fall back to a default and silently change the
+battle. Validation closes that hole separately, by parsing the request,
+serializing it back, and reporting any key that did not survive the round trip
+— so `weapons` for `weapon` fails as
+`request.attacker.technology.weapons` instead of quietly fighting at level
+zero. It descends into slot arrays, and a key set to `null` is reported like
+any other, because a misspelling and a skipped `Option` look identical by
+value.
+
+A mistyped **entity id** is the same defect wearing different clothes: fleets
+are maps, so `"2014": 30` is a well-formed fixture describing thirty of
+something that has no stats and never fights. Every id in a request fleet and
+in `observed`'s loss tables is checked against the entity table.
+
+## Writing one
+
+```bash
+cargo run -p combat-cli -- fixture template > combat-core/tests/fixtures/my-battle.json
+cargo run -p combat-cli -- fixture check combat-core/tests/fixtures/my-battle.json
+cargo run -p combat-cli -- fixture run combat-core/tests/fixtures/my-battle.json
+```
+
+`template` prints this format with every field a human must supply marked
+`FILL IN`; validation rejects that marker, so a half-edited template cannot
+reach review claiming a battle nobody observed. `check` applies exactly the
+rules the corpus test applies — they are one implementation, in
+`combat-fixtures` — so a fixture that passes here passes in CI. `run` also
+simulates it and prints observed against simulated, with the range each metric
+covered across individual battles. That range is the evidence a `justification`
+is supposed to rest on; write it from what `run` prints rather than from a
+guess.
 
 `observed_battle` must be `true` for a real report. A real report is rejected
 unless `publication_consent` is also `true`. In particular, never add another
-player's report without their permission. A synthetic format example must set
-both fields to `false`, say that it is synthetic in `source` and `name`, and
-must not contain data presented as a live observation.
+player's report without their permission. `fixture template` ships both fields
+`false` for that reason — setting them is the affirmative act, and a template
+that arrived pre-checked would be recording nobody's decision. A synthetic
+format example leaves them `false`, says that it is synthetic in `source` and
+`name`, and must not contain data presented as a live observation.
 
 ## Tolerances and failures
 

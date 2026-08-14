@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "name": "FILL IN: short unique description, e.g. 'battleship wave into a fully built shipyard moon'",
+  "provenance": {
+    "observed_battle": false,
+    "source": "FILL IN: where this report came from, with no private player data. Set observed_battle to true once it is a real report, and publication_consent to true only once whoever fought it has agreed to it being published",
+    "universe": "FILL IN: universe name or identifier",
+    "approximate_date": "FILL IN: YYYY-MM, or another honest approximation",
+    "game_version": "FILL IN: the version shown or known at the time",
+    "publication_consent": false
+  },
+  "blocked_on": null,
+  "request": {
+    "attacker": {
+      "technology": {
+        "weapon": 0,
+        "shield": 0,
+        "armour": 0
+      },
+      "entities": {
+        "204": 1
+      }
+    },
+    "defender": {
+      "technology": {
+        "weapon": 0,
+        "shield": 0,
+        "armour": 0
+      },
+      "entities": {
+        "401": 1
+      }
+    },
+    "debris_percentage": 30.0,
+    "use_rapid_fire": true,
+    "simulations": 1000,
+    "enable_downscaling": false,
+    "universe_settings": null,
+    "plunder_percentage": 50
+  },
+  "observed": {
+    "outcome": "AttackersWin",
+    "attacker_losses": {},
+    "defender_losses": {
+      "401": 1
+    },
+    "debris": {
+      "metal": 0,
+      "crystal": 0,
+      "deuterium": 0
+    }
+  },
+  "tolerance": {
+    "minimum_observed_outcome_rate": 0.8,
+    "losses": {
+      "absolute": 2.0,
+      "relative": 0.05
+    },
+    "debris": {
+      "absolute": 1000.0,
+      "relative": 0.05
+    },
+    "justification": "FILL IN: why this sample size and these margins suit this battle. Run 'combat-cli fixture run' on the finished file and quote the spread it prints."
+  }
+}

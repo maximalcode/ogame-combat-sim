@@ -1,9 +1,12 @@
 //! Runs every real-world regression fixture in `tests/fixtures`.
-
-mod regression_corpus_support;
+//!
+//! The format, its validation and the comparison all live in `combat-fixtures`,
+//! because `combat-cli fixture` offers a contributor the same checks before
+//! they open a pull request. This file is only the part that is specific to
+//! running the corpus under libtest.
 
 use combat_core::Simulator;
-use regression_corpus_support::{FixtureStatus, discover_fixtures, load_fixture, run_fixture};
+use combat_fixtures::{FixtureStatus, discover_fixtures, load_fixture, run_fixture};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -37,7 +40,7 @@ fn every_regression_fixture_matches_its_observed_battle() {
             }
         };
 
-        match run_fixture(&fixture, &simulator) {
+        match run_fixture(&fixture, |request| simulator.simulate_multiple(request)) {
             FixtureStatus::Passed => passed += 1,
             FixtureStatus::Skipped(reason) => {
                 skipped += 1;

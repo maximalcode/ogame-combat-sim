@@ -8,7 +8,9 @@
 //! nobody promised to keep stable — is worse than not having it.
 
 use std::fmt::Write as _;
+use std::path::Path;
 
+use combat_fixtures::{Evaluation, NumberCheck};
 use combat_types::entities::entity_stats;
 use combat_types::names::{ENTITY_INFO, name_of};
 use combat_types::{
@@ -370,6 +372,70 @@ pub fn render_entities() -> String {
     );
 
     out
+}
+
+// One layout for the header and its rows, so the two cannot drift. A macro
+// rather than a const because a format string must be a literal where it is
+// used — the same reason render.rs states its tables this way.
+macro_rules! metric_row {
+    ($out:expr, $($cell:expr),+ $(,)?) => {
+        let _ = writeln!($out, "  {:<26} {:>14} {:>14} {:>12} {:>12}  {:<21} {}", $($cell),+);
+    };
+}
+
+pub fn render_evaluation(path: &Path, name: &str, evaluation: &Evaluation) -> String {
+    let mut out = String::new();
+    let outcome = &evaluation.outcome;
+
+    let _ = writeln!(out, "{} ('{name}')", path.display());
+    let _ = writeln!(
+        out,
+        "  outcome {:?} in {:.2}% of runs, needs {:.2}%  {}",
+        outcome.expected,
+        outcome.observed_rate * 100.0,
+        outcome.required_rate * 100.0,
+        verdict(outcome.passed())
+    );
+
+    metric_row!(
+        out,
+        "metric",
+        "observed",
+        "simulated",
+        "difference",
+        "allowed",
+        "per-battle range",
+        ""
+    );
+
+    for check in &evaluation.numbers {
+        metric_row!(
+            out,
+            check.label,
+            format!("{:.3}", check.expected),
+            format!("{:.3}", check.simulated),
+            format!("{:.3}", check.difference()),
+            format!("{:.3}", check.allowed),
+            range(check),
+            verdict(check.passed())
+        );
+    }
+
+    out
+}
+
+/// The spread across individual battles, which is the evidence a
+/// `tolerance.justification` is supposed to rest on.
+fn range(check: &NumberCheck) -> String {
+    if check.minimum.is_finite() && check.maximum.is_finite() {
+        format!("{:.0} – {:.0}", check.minimum, check.maximum)
+    } else {
+        "no battles".to_owned()
+    }
+}
+
+fn verdict(passed: bool) -> &'static str {
+    if passed { "ok" } else { "OVER TOLERANCE" }
 }
 
 #[cfg(test)]

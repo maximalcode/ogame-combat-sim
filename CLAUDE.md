@@ -43,6 +43,7 @@ itself was carried over intact — it was never contaminated.
 | `combat-core/src/scaling.rs` | Downscaling above `DOWNSCALE_THRESHOLD` (10M ships) |
 | `combat-core/src/economics.rs` | Debris, loot, plunder |
 | `combat-core/src/report_builder.rs` | `ReportBuilder::build_summary_report` |
+| `combat-fixtures/src/lib.rs` | The regression corpus fixture format: `Fixture`, validation, `Evaluation`, `run_fixture`, `ignored_request_fields` |
 | `combat-api/src/main.rs` | The whole server: two routes, no state |
 | `combat-cli/src/cli.rs` | clap definitions, `build_request`, `parse_request_json`, `validate` |
 | `combat-cli/src/args.rs` | `parse_fleet` / `parse_tech` / `parse_resources` — the shorthand parsers |
@@ -72,6 +73,9 @@ cargo test --workspace            # ~25s including compile
 cargo run -p combat-api           # server on :3000
 cargo run -p combat-cli -- sim -a "cruiser:100" -d "lf:1000" --tech 10
 cargo run -p combat-cli -- entities
+cargo run -p combat-cli -- fixture template     # skeleton for a new corpus fixture
+cargo run -p combat-cli -- fixture check DIR    # the checks CI applies, before CI
+cargo run -p combat-cli -- fixture run DIR      # ...plus observed vs simulated
 cargo bench --bench engine        # criterion; first compile is slow, see below
 ```
 
@@ -236,13 +240,48 @@ cargo fmt --check \
   `skip_records_remain_visible_under_libtest_capture` pins that by re-running
   itself in a child process. **The envelope is `deny_unknown_fields` and the
   `request` inside it is not** — it is a plain `CombatRequest`, deliberately,
-  so that a fixture doubles as an `/api/simulate` body; the cost is that a
-  misspelled request field is ignored, silently takes its default and quietly
-  changes the battle. And **tolerances are per fixture with a written
-  justification**, never a global constant, because variance scales with fleet
-  size. The one fixture there now is a labelled synthetic placeholder and says
-  so in its `name`, `source` and `observed_battle: false`; real reports arrive
-  via issue #17 and are rejected without `publication_consent`.
+  so that a fixture doubles as an `/api/simulate` body. That would leave a
+  misspelled request field to take its default and quietly change the battle,
+  so `ignored_request_fields` closes it from outside serde: parse the request,
+  serialize it back, and report any key that did not survive — descending into
+  slot arrays, because `PartySlot` is not `deny_unknown_fields` either. The
+  carve-out is `FIELDS_SKIPPED_ON_OUTPUT`, a **list of names** rather than a
+  test on the value: `"universe_setings": null` is a typo and looks exactly
+  like a skipped `Option`, so excusing every null would excuse it too.
+  `fields_serde_skips_on_output_are_not_mistaken_for_typos` fails if a new
+  `skip_serializing_if` arrives without being added to that list. A mistyped
+  **entity id** is the same defect — fleets are maps, so `"2014": 30` is
+  well-formed and simply never fights — and `unknown_entity_errors` checks
+  every id against `names::name_of`. And **tolerances are per
+  fixture with a written justification**, never a global constant, because
+  variance scales with fleet size. The one fixture there now is a labelled
+  synthetic placeholder and says so in its `name`, `source` and
+  `observed_battle: false`; real reports arrive via issue #17 and are rejected
+  without `publication_consent`.
+- **The fixture format is a crate, not a test module, and that is the point.**
+  `combat-fixtures` holds the envelope, its validation and the comparison;
+  `combat-core/tests/regression_corpus.rs` is only the part specific to running
+  the corpus under libtest, and `combat-cli fixture template|check|run` offers a
+  contributor the same checks before they open a pull request. A fixture that
+  passes `check` locally and fails in CI is the one failure the arrangement
+  exists to prevent, so **do not reimplement a rule in either caller** —
+  including the *order* of validate, skip, compare, which is why both go
+  through `evaluate_fixture` and `run_fixture` is only that reduced to
+  pass/skip/fail. `the_shipped_corpus_passes_the_checks_the_cli_applies` in
+  `combat-cli/src/fixture.rs` is the assertion that they agree. Note the CLI
+  counts a skip apart from a pass and says so in its summary, for the same
+  reason the corpus test writes skip records past libtest's capture: a fixture
+  that was never compared has not agreed with anything. The crate
+  deliberately does **not** depend on `combat-core`: `run_fixture` takes a
+  closure that produces `CombatResults`, so validating a fixture never installs
+  the process-wide rayon pool.
+- **A combat report cannot be imported automatically, and it is not for want of
+  code.** The `cr-en-1-<hash>` string a player can copy is an id, not data, and
+  resolving it goes through `api/v1/combat/report?api_key=…` with a developer
+  key Gameforge issues on application and requires be kept private.
+  `combat-ogame-api` touches only the public XML endpoints. So the corpus is
+  filled by hand, which is why the authoring tooling exists and why issue #17 is
+  labelled `ready-for-human`.
 - **Edition 2024 reserves `gen`.** That is why this uses rand 0.9
   (`random`, `random_range`, `from_os_rng`) rather than rand 0.8's `gen`.
 - **The clippy config has two halves.** Everything above the
