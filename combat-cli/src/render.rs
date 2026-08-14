@@ -294,11 +294,34 @@ pub fn render_rounds(result: &SimulationResult, total: u32) -> String {
     // A battle v13's instant calculation decided has a round list and nothing
     // in it, which is the truth rather than a gap: no rounds were fought. An
     // empty table under a heading reads as a bug, so say it instead.
+    //
+    // But an empty list has a second, unrelated cause: `validate` only rejects
+    // *both* fleets being empty, so a battle with one side bringing zero ships
+    // reaches here too, and the round loop never runs for the same reason it
+    // wouldn't after an instant calculation — one side already has nothing to
+    // shoot at. Reporting the ratio explanation for that case would be a
+    // false claim about a battle that never had a chance to be close. The two
+    // are told apart the only way the data allows: losses plus survivors is
+    // the starting fleet, and a side that started at zero was never in a
+    // round to begin with, instant calculation or not.
     if rounds.is_empty() {
-        let _ = writeln!(
-            out,
-            "  (no rounds were fought — one side out-gunned the other by more than\n   10,000 times, so the battle was calculated instantly)"
-        );
+        let attacker_total =
+            fleet_total(&result.attacker_losses) + fleet_total(&result.attacker_remaining);
+        let defender_total =
+            fleet_total(&result.defender_losses) + fleet_total(&result.defender_remaining);
+
+        if attacker_total == 0 || defender_total == 0 {
+            let _ = writeln!(
+                out,
+                "  (no rounds were fought — one side brought no ships, so there was \
+                 nothing to fight)"
+            );
+        } else {
+            let _ = writeln!(
+                out,
+                "  (no rounds were fought — one side out-gunned the other by more than\n   10,000 times, so the battle was calculated instantly)"
+            );
+        }
         return out;
     }
 
@@ -327,6 +350,12 @@ pub fn render_rounds(result: &SimulationResult, total: u32) -> String {
     }
 
     out
+}
+
+/// Every unit a side fields, summed across types. Used only to tell an empty
+/// fleet from a fully destroyed one when a battle has no round detail.
+fn fleet_total(fleet: &FleetComposition) -> u32 {
+    fleet.values().sum()
 }
 
 fn survivors(start: u32, end: u32) -> String {
@@ -533,15 +562,18 @@ mod tests {
 
     /// An instantly calculated battle records a round list with nothing in it,
     /// which is a different statement from "nothing was recorded" and reads as
-    /// a broken table if it is printed as one.
+    /// a broken table if it is printed as one. Both sides started with ships —
+    /// the attacker's are all still there, the defender's were wiped — which
+    /// is the only way to reach zero rounds without either fleet having been
+    /// empty to start with.
     #[test]
     fn a_battle_with_no_rounds_says_why_it_has_none() {
         let result = SimulationResult {
             outcome: combat_types::CombatOutcome::AttackersWin,
             rounds: 0,
             attacker_losses: FleetComposition::new(),
-            defender_losses: FleetComposition::new(),
-            attacker_remaining: FleetComposition::new(),
+            defender_losses: FleetComposition::from([(408, 1)]),
+            attacker_remaining: FleetComposition::from([(204, 100)]),
             defender_remaining: FleetComposition::new(),
             debris_field: combat_types::DebrisField::default(),
             loot: combat_types::PlanetResources::default(),
@@ -555,6 +587,38 @@ mod tests {
         };
         let out = render_rounds(&result, 1);
         assert!(out.contains("no rounds were fought"), "{out}");
+        assert!(out.contains("instantly"), "{out}");
+        assert!(!out.contains("Att. damage"), "{out}");
+    }
+
+    /// `validate` rejects only *both* fleets being empty, so a battle where one
+    /// side brought no ships at all reaches `render_rounds` with the same empty
+    /// round list an instant calculation leaves — for an unrelated reason, and
+    /// the message must not claim the ratio decided a battle that never had an
+    /// opponent to measure it against.
+    #[test]
+    fn a_battle_with_an_empty_side_does_not_claim_it_was_instant_calculated() {
+        let result = SimulationResult {
+            outcome: combat_types::CombatOutcome::AttackersWin,
+            rounds: 0,
+            attacker_losses: FleetComposition::new(),
+            defender_losses: FleetComposition::new(),
+            attacker_remaining: FleetComposition::from([(204, 100)]),
+            defender_remaining: FleetComposition::new(),
+            debris_field: combat_types::DebrisField::default(),
+            loot: combat_types::PlanetResources::default(),
+            attacker_profit: 0,
+            defender_profit: 0,
+            round_details: Some(Vec::new()),
+            round_compositions: None,
+            round_compositions_by_slot: None,
+            attacker_slots: None,
+            defender_slots: None,
+        };
+        let out = render_rounds(&result, 1);
+        assert!(out.contains("no rounds were fought"), "{out}");
+        assert!(out.contains("no ships"), "{out}");
+        assert!(!out.contains("10,000 times"), "{out}");
         assert!(!out.contains("Att. damage"), "{out}");
     }
 
