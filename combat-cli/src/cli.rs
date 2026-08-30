@@ -15,7 +15,8 @@
 //! `--downscaling off` really turns it off.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use combat_types::{CombatRequest, PartyData, Technology};
+use combat_types::names::name_of;
+use combat_types::{CombatRequest, EntityType, PartyData, Technology};
 
 use crate::args::{parse_fleet, parse_resources, parse_tech};
 
@@ -287,10 +288,23 @@ pub fn parse_request_json(json: &str) -> Result<CombatRequest, String> {
 /// Reject a request that cannot produce a report, with a message naming the
 /// field at fault.
 ///
-/// Shared by both paths, so a JSON file gets the same guard as the flags. Both
-/// cases are ones the engine cannot answer rather than ones we would rather it
-/// did not: an empty battle has no report, and averaging zero simulations
-/// panics in the report builder.
+/// Shared by both paths, so a JSON file gets the same guard as the flags. All
+/// three cases are ones the engine cannot answer rather than ones we would
+/// rather it did not: an empty battle has no report, averaging zero simulations
+/// panics in the report builder, and an entity id that names nothing describes a
+/// fleet the engine has no stats for.
+///
+/// The unknown id is the one worth explaining. The `--attacker` shorthand
+/// resolves names and rejects what it cannot resolve, but `--file` takes the
+/// `/api/simulate` body, and a fleet there is a *map* — `{"2014": 30}` for
+/// `{"214": 30}` is well-formed JSON describing thirty of something that does
+/// not exist. `Party::new` skips it because `entity_stats` has no row for it, so
+/// the ships silently never arrive and the battle that is reported is a
+/// different battle from the one that was asked for. `combat-fixtures` closes
+/// exactly this hole for corpus fixtures, with `names::name_of` and for exactly
+/// this reason; a battle typed at a prompt deserves the same answer. It also
+/// leaves `render_rounds` able to say why no rounds were fought, which it cannot
+/// do while a fleet may have evaporated between the request and the party.
 pub fn validate(request: &CombatRequest) -> Result<(), String> {
     let attackers: u32 = request.attacker.entities.values().sum();
     let defenders: u32 = request.defender.entities.values().sum();
@@ -305,8 +319,37 @@ pub fn validate(request: &CombatRequest) -> Result<(), String> {
     if request.simulations == 0 {
         return Err("simulations must be at least 1".to_owned());
     }
+    if let Some(unknown) = unknown_entity(request) {
+        return Err(format!(
+            "{unknown} is not a ship or defence this simulator knows — \
+             `combat-cli entities` prints every id and name"
+        ));
+    }
 
     Ok(())
+}
+
+/// The smallest entity id in the request that names nothing, if any.
+///
+/// Slots carry a whole `PartyData` each, so a mistyped id hides there too — and
+/// the slot fleets are what `simulate_single_with_slots` actually builds from,
+/// which makes them exactly as able to evaporate as the top-level ones.
+/// Deterministic in which id it reports, because a `HashMap` is not ordered and
+/// an error message that changes between runs is one nobody can test.
+fn unknown_entity(request: &CombatRequest) -> Option<EntityType> {
+    let slots = request
+        .attacker_slots
+        .iter()
+        .chain(request.defender_slots.iter())
+        .flatten()
+        .map(|slot| &slot.data.entities);
+
+    [&request.attacker.entities, &request.defender.entities]
+        .into_iter()
+        .chain(slots)
+        .flat_map(|fleet| fleet.keys().copied())
+        .filter(|id| name_of(*id).is_none())
+        .min()
 }
 
 #[cfg(test)]
@@ -503,6 +546,42 @@ mod tests {
         };
         let err = validate(&request).unwrap_err();
         assert!(err.contains("simulations"), "should name the field: {err}");
+    }
+
+    /// A mistyped entity id in a `--file` body is well-formed JSON describing a
+    /// fleet that does not exist, and until it is rejected here the ships
+    /// quietly never arrive: `Party::new` has no stats to build them from, the
+    /// round loop finds one side empty, and `render_rounds` explains the empty
+    /// round list as an instant calculation that never happened.
+    #[test]
+    fn an_entity_id_that_names_nothing_is_rejected() {
+        let request = parse_request_json(
+            r#"{ "attacker": { "technology": {}, "entities": { "206": 100 } },
+                 "defender": { "technology": {}, "entities": { "9999": 5 } },
+                 "use_rapid_fire": true, "simulations": 10 }"#,
+        )
+        .expect("the body is well-formed; the id inside it is the problem");
+
+        let err = validate(&request).unwrap_err();
+        assert!(err.contains("9999"), "should name the id at fault: {err}");
+    }
+
+    /// Slot fleets are what a slot battle is actually built from, so an id that
+    /// names nothing hides there just as well as at the top level.
+    #[test]
+    fn an_entity_id_that_names_nothing_is_rejected_inside_a_slot() {
+        let request = parse_request_json(
+            r#"{ "attacker": { "technology": {}, "entities": { "206": 100 } },
+                 "defender": { "technology": {}, "entities": { "204": 10 } },
+                 "defender_slots": [
+                     { "id": "D1", "data": { "technology": {}, "entities": { "2014": 30 } } }
+                 ],
+                 "use_rapid_fire": true, "simulations": 10 }"#,
+        )
+        .expect("the body is well-formed; the id inside the slot is the problem");
+
+        let err = validate(&request).unwrap_err();
+        assert!(err.contains("2014"), "should name the id at fault: {err}");
     }
 
     /// The acceptance criterion for `--file`: a body the API accepts must be

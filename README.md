@@ -31,10 +31,11 @@ The engine implements OGame's combat resolution as it actually behaves:
   scale and extrapolated, so a fleet of any size resolves in reasonable time
 - **Instant calculation** — v13's entry rule: a side with more than 10,000 times
   the opposition's combined attack power can win the battle without it being
-  fought. A fleet of espionage probes is not an automatic loss — it cannot win
-  against an armed opponent, but a hundred of them against a single Rocket
-  Launcher is a draw, not a defeat, because the launcher only fires once a
-  round
+  fought, provided the engine can also show the six rounds would have produced
+  the same result. A fleet of espionage probes is not an automatic loss — it
+  cannot win against an armed opponent, but a hundred of them against a single
+  Rocket Launcher is a draw, not a defeat, because the launcher only fires once
+  a round
 
 ## Accuracy — what is and is not modelled
 
@@ -49,17 +50,22 @@ What is **not** yet applied:
 | --- | --- | --- |
 | The lifeform empire model | v9 (2022) | Bonuses apply, but which planets, buildings and species experience produced them is the caller's arithmetic — the engine takes researched levels, or the resolved percentages |
 
-v13's instant calculation is implemented, and on less than the game applies it
-to. The 10,000× ratio is the gate; a battle only skips its rounds if the engine
-can also show that the losing side cannot take a single unit with it, that the
-winning side's fire actually gets through, and that the winning side's
-firepower clears the losing side's total hitpoints by the same 10,000× margin
-— the condition that declines the most battles, including a Solar Satellite
-against a lone Espionage Probe: the ratio is met by any armed opponent at all,
-but six rounds of the satellite's single point of damage a round leave the
-probe short of destroyed. Everything else is simulated — slower, and the same
-answer. The one visible consequence is the round count: a battle decided this
-way honestly reports zero rounds fought.
+v13's instant calculation is implemented, and on considerably less than the game
+applies it to. The 10,000× ratio is the gate; a battle only skips its rounds if
+the engine can also show that the losing side cannot take a single unit with it,
+that the winning side's fire actually gets through, that the winning side's
+firepower clears the losing side's total hitpoints by the same 10,000× margin,
+and that the winning side fires enough *shots* to have aimed at every unit the
+loser brought — six rounds' worth at one shot per armed unit, against the same
+margin. The last two are what decline most battles. The hitpoint margin catches
+a Solar Satellite against a lone Espionage Probe: the ratio is met by any armed
+opponent at all, but six rounds of the satellite's single point of damage leave
+the probe short of destroyed. The shot count catches the opposite shape — a
+handful of Deathstars at maximum Weapons against a thousand probes, which is
+overwhelming on paper and, with rapid fire switched off, is a thousand targets
+being shot at about once each. Everything else is simulated — slower, and the
+same answer. The one visible consequence is the round count: a battle decided
+this way honestly reports zero rounds fought.
 
 One thing outside combat itself is missing too, and it changes what an attack
 costs: destroyed defences are never rebuilt here, where the game gives each one

@@ -304,6 +304,18 @@ pub fn render_rounds(result: &SimulationResult, total: u32) -> String {
     // are told apart the only way the data allows: losses plus survivors is
     // the starting fleet, and a side that started at zero was never in a
     // round to begin with, instant calculation or not.
+    //
+    // That reconstruction is only sound because of a guard somewhere else, and
+    // this is the note that keeps the two together. `Party::new` skips an
+    // entity id the stat table has no row for, so a fleet of nothing but
+    // unknown ids builds an empty party and fights no rounds — while `losses +
+    // remaining` still counts every ship the *request* asked for and comes out
+    // non-zero on both sides. Read here, that is indistinguishable from an
+    // instant calculation, and this function would confidently explain a
+    // ten-thousand-fold mismatch that never happened. `cli::validate` rejects
+    // unknown ids before a battle is ever run, which is what makes the
+    // reconstruction above complete rather than merely usually right. Delete
+    // that check and this message starts lying.
     if rounds.is_empty() {
         let attacker_total =
             fleet_total(&result.attacker_losses) + fleet_total(&result.attacker_remaining);

@@ -67,16 +67,19 @@
 //!   winner loses nothing" is false here, and a ratio-only rule would have
 //!   reported zero.
 //!
-//! So the ratio is the gate, and three further conditions — each one read
-//! straight off the engine's own damage rule rather than invented — decide
-//! whether the shortcut is allowed to speak for the rounds:
+//! So the ratio is the gate, and four further conditions — each one read
+//! straight off the engine's own damage rule and round loop rather than
+//! invented — decide whether the shortcut is allowed to speak for the rounds:
 //!
 //! 1. the loser's fire must not register on the winner at all, so the winner
 //!    provably loses nothing (the third battle above);
 //! 2. the winner's fire must register on everything the loser has, so the
 //!    bounce rule cannot save it (the first battle above);
 //! 3. the winner's firepower must overwhelm the loser's hitpoints, so the wipe
-//!    is not merely likely (the second battle above).
+//!    is not merely likely (the second battle above);
+//! 4. the winner must fire enough *shots* to have aimed at everything the loser
+//!    brought, because damage and shots are two separate budgets and a wipe-out
+//!    spends both (the section below is the whole of why).
 //!
 //! When any of them fails the battle takes the ordinary path and is simulated,
 //! which is slower and *right*. That makes this engine's short-circuit strictly
@@ -85,45 +88,77 @@
 //! direction to be wrong in, because the cost is time and the alternative cost
 //! is a wrong answer.
 //!
-//! # The one number that is not from the changelog
+//! # The margin, and the two budgets it is spent from
 //!
-//! Condition 3 needs a margin: "the winner's firepower exceeds the loser's
-//! hitpoints" is not enough on its own, because targets are picked at random
-//! and shots land on units that are already dead. Rather than invent a second
-//! constant, it reuses the one the changelog supplies —
+//! Conditions 3 and 4 both need a margin: "the winner's firepower exceeds the
+//! loser's hitpoints" is not enough on its own, because targets are picked at
+//! random and shots land on units that are already dead. Rather than invent a
+//! second constant, both reuse the one the changelog supplies —
 //! [`WIPE_CERTAINTY_MARGIN`] is [`INSTANT_CALCULATION_RATIO`] — and the reuse
-//! is conservative by construction: the condition is `attack_power >= MARGIN *
-//! loser.hitpoints`, so a *larger* margin is a *harder* bar to clear, and too
-//! large a margin means the battle gets simulated more often than it strictly
-//! needed to — the correct answer, arrived at the slow way. The dangerous
-//! direction is the other one: too small a margin would call a wipe-out
-//! certain when six rounds of shots wasted on the already-dead would actually
-//! have left something standing. Reusing the changelog's 10,000× — a figure
-//! this module did not get to pick to be conveniently large — rather than
-//! inventing something smaller for the purpose keeps the margin on the safe
-//! side of that line.
+//! is conservative by construction: both conditions read `winner >= MARGIN *
+//! loser`, so a *larger* margin is a *harder* bar to clear, and too large a
+//! margin means the battle gets simulated more often than it strictly needed
+//! to — the correct answer, arrived at the slow way. The dangerous direction is
+//! the other one: too small a margin would call a wipe-out certain when six
+//! rounds of shots wasted on the already-dead would actually have left
+//! something standing. Reusing the changelog's 10,000× — a figure this module
+//! did not get to pick to be conveniently large — rather than inventing
+//! something smaller for the purpose keeps the margin on the safe side of that
+//! line.
 //!
-//! With it, the stat table bounds the waste, at Weapons 0: the frailest thing
-//! in the game has 100 hitpoints and the hardest *base* shot in the table is a
-//! Deathstar's 200,000, so a winner that brings ten thousand times the loser's
-//! hitpoints in base weapon damage is bringing at least five shots per enemy
-//! unit per round however it is composed, and six rounds of five shots each
-//! leave nothing standing. That specific arithmetic does not survive
-//! technology: [`SideProfile::of`] reads *effective* weapon power, and a
-//! Deathstar at Weapons 255 fires 5,300,000 rather than 200,000, which loosens
-//! the same condition to as little as 5.3 loser units per winner unit — 0.19
-//! shots per enemy unit per round, not five. The conclusion is not shown to
-//! survive by this counting argument at tech the type system allows; what
-//! carries it there instead is that a side clearing the margin at that kind of
-//! weapon power is landing hits that are themselves enormously overkill per
-//! target, one-shotting whatever they touch rather than needing several
-//! rounds of accumulated damage — a different argument, and one this module
-//! does not attempt to make precise. What the margin cannot be, at any tech
-//! level, is *proved*, and
-//! `no_battle_the_rule_decides_disagrees_with_the_battle_it_replaces` is the
-//! answer to that: fleets nobody chose, fought both ways.
+//! ## Why one budget is not enough
+//!
+//! Condition 3 alone was wrong, and how it was wrong is the reason condition 4
+//! exists. It bounds the *damage* the winner brings. What bounds *kills* is the
+//! number of shots, and `Party::shoot_at` gives an armed unit exactly one shot
+//! per round unless rapid fire buys it more. Those two budgets come apart the
+//! moment one unit's weapon power is large next to one enemy unit's hitpoints:
+//! the damage margin is then cleared by a handful of units, and a handful of
+//! units cannot aim at very much in six rounds.
+//!
+//! 189 Deathstars at Weapons 255 are the case that found it. They are worth
+//! 1,001,700,000 attack power — 189 × 5,300,000 — against 1,000 Espionage
+//! Probes' 100,000 hitpoints, so they clear the ten-thousand-fold margin, and
+//! they fire 1,134 shots in the whole battle at 1,000 targets chosen at random.
+//! Fought with `use_rapid_fire` off, that battle is a draw on every seed tried,
+//! with as many as 89 probes coming home on full hull; the ratio-plus-damage
+//! rule reported a clean wipe. Rapid fire had been hiding it, because a
+//! Deathstar has rapid fire 1250 against probes and with the flag on really
+//! does fire thousands of shots a round — but `use_rapid_fire` is a request
+//! field with a CLI flag behind it, so "the flag is usually on" is not an
+//! argument the engine gets to make.
+//!
+//! Condition 4 is therefore the same margin again in the currency that actually
+//! bounds kills, and it counts only shots the engine *guarantees*: `MAX_ROUNDS`
+//! rounds times one shot per armed winner unit, against the number of units the
+//! loser brought. Unarmed units are left out of the winner's side of it —
+//! probes attached to a fleet fire nothing that can kill anything — and rapid
+//! fire is left out too, because it is a coin flip per shot and a guarantee
+//! cannot be built out of one. When rapid fire does come up it only makes a bar
+//! the side had already cleared easier still.
+//!
+//! ## What the two together do and do not settle
+//!
+//! Condition 4 is stated in units and rounds, and technology appears nowhere in
+//! it, so unlike the counting argument it replaced it does not quietly stop
+//! holding at Weapons 255: a side the rule fires for has aimed at least
+//! `WIPE_CERTAINTY_MARGIN` shots per enemy unit over the battle — better than
+//! sixteen hundred per enemy unit per round — whatever it is composed of and
+//! whatever it has researched. A loser unit survives a round only if every one
+//! of those shots picked one of the other slots, which for `n` units and `s`
+//! shots is `(1 - 1/n)^s` and vanishes long before it is worth writing down.
+//!
+//! Vanishes, not *cannot happen*: targets are drawn uniformly at random, so no
+//! finite number of shots makes a survivor strictly impossible, and the margin
+//! is not a proof at any technology level. That is what
+//! `no_battle_the_rule_decides_disagrees_with_the_battle_it_replaces` is for:
+//! fleets nobody chose, at technology levels and rapid-fire settings it picks
+//! itself, fought both ways — including a slice of seeds that bisect for the
+//! smallest fleet the rule will still speak for, so that the comparison happens
+//! on the line these conditions draw rather than comfortably inside it. That
+//! slice is what the version of this module without condition 4 fails.
 
-use crate::combat::Party;
+use crate::combat::{MAX_ROUNDS, Party};
 
 /// The changelog's threshold, and the only number in this module that comes
 /// from outside the engine: "more than 10.000 times the combined attack power
@@ -131,8 +166,10 @@ use crate::combat::Party;
 /// exactly ten thousand times the other's fights its battle.
 const INSTANT_CALCULATION_RATIO: f64 = 10_000.0;
 
-/// How far the winner's firepower has to exceed the loser's total hitpoints
-/// before the wipe counts as certain rather than likely.
+/// How far the winner has to exceed the loser before the wipe counts as certain
+/// rather than likely — measured against the loser's total hitpoints in one
+/// condition and against its unit count in the other, because damage and shots
+/// are two budgets and a wipe-out spends both.
 ///
 /// Deliberately the same number as [`INSTANT_CALCULATION_RATIO`] rather than a
 /// second constant of its own: nothing sources a margin for this, and the
@@ -204,6 +241,17 @@ struct SideProfile {
     /// Shield plus hull over every unit — what the other side has to chew
     /// through to leave nothing standing.
     hitpoints: f64,
+    /// How many units the side fields at all. Read as the *loser's* figure: it
+    /// is the number of separate things the winner has to have aimed at, and a
+    /// unit that is never targeted comes home whatever was fired elsewhere.
+    units: f64,
+    /// How many of those units fire a shot that can do anything. Read as the
+    /// *winner's* figure, because `Party::shoot_at` gives each of them one shot
+    /// per round before rapid fire — so this, and not `attack_power`, is the
+    /// side's guaranteed rate of fire. Unarmed units are excluded for the same
+    /// reason they are excluded from `weakest_armed_shot`: a probe attached to
+    /// a fleet is not a shot.
+    armed_units: f64,
     /// The hardest single shot this side can fire.
     strongest_shot: f32,
     /// The softest shot from a unit that is armed at all. Unarmed units —
@@ -225,6 +273,8 @@ impl SideProfile {
         let mut profile = Self {
             attack_power: 0.0,
             hitpoints: 0.0,
+            units: 0.0,
+            armed_units: 0.0,
             strongest_shot: 0.0,
             weakest_armed_shot: None,
             smallest_shield: f32::INFINITY,
@@ -236,8 +286,10 @@ impl SideProfile {
 
             profile.attack_power += f64::from(shot);
             profile.hitpoints += f64::from(entity.max_shield) + f64::from(entity.max_hull);
+            profile.units += 1.0;
             profile.strongest_shot = profile.strongest_shot.max(shot);
             if shot > 0.0 {
+                profile.armed_units += 1.0;
                 profile.weakest_armed_shot =
                     Some(profile.weakest_armed_shot.map_or(shot, |w| w.min(shot)));
             }
@@ -250,7 +302,7 @@ impl SideProfile {
 
     /// Whether this side wipes `loser` out without the rounds being fought.
     ///
-    /// The four conditions in the order they are cheapest to reject on. Each
+    /// The five conditions in the order they are cheapest to reject on. Each
     /// one is spelled out at its site; the module documentation is where the
     /// battles that forced them are.
     fn annihilates(&self, loser: &SideProfile) -> bool {
@@ -290,7 +342,22 @@ impl SideProfile {
         // targets are chosen at random and shots are spent on units that are
         // already dead. See the module documentation for why the margin is the
         // changelog's own number.
-        self.attack_power >= WIPE_CERTAINTY_MARGIN * loser.hitpoints
+        if self.attack_power < WIPE_CERTAINTY_MARGIN * loser.hitpoints {
+            return false;
+        }
+
+        // Damage is only one of the two budgets a wipe-out spends. The other is
+        // shots, and `Party::shoot_at` issues exactly one per armed unit per
+        // round unless rapid fire grants more — so a side whose weapon power is
+        // huge next to one enemy unit's hitpoints clears the condition above
+        // with a handful of units, and a handful of units never aims at most of
+        // what it is supposed to be destroying. The margin again, then, against
+        // the shots the engine guarantees rather than the damage they carry:
+        // `MAX_ROUNDS` of them per armed unit, against the number of units the
+        // loser brought. Rapid fire is not counted, because it is a per-shot
+        // coin flip and a guarantee cannot be built out of one; when it fires it
+        // only makes this bar easier to have cleared.
+        f64::from(MAX_ROUNDS) * self.armed_units >= WIPE_CERTAINTY_MARGIN * loser.units
     }
 }
 
@@ -331,6 +398,8 @@ mod tests {
         SideProfile {
             attack_power: count * f64::from(weapon),
             hitpoints: count * (f64::from(shield) + f64::from(hull)),
+            units: count,
+            armed_units: if weapon > 0.0 { count } else { 0.0 },
             strongest_shot: weapon,
             weakest_armed_shot: (weapon > 0.0).then_some(weapon),
             smallest_shield: shield,
@@ -352,8 +421,10 @@ mod tests {
 
     #[test]
     fn a_fleet_annihilates_probes_it_overwhelms() {
-        // 100,000 fighters: 5,000,000 attack power against 100 hitpoints, which
-        // clears the margin fifty times over.
+        // 100,000 fighters: 5,000,000 attack power against 100 hitpoints, so
+        // the margin of 10,000 × 100 = 1,000,000 is cleared five times over.
+        // Their 600,000 guaranteed shots against one probe clear the other
+        // margin by rather more.
         assert!(light_fighters(100_000.0).annihilates(&probes(1.0)));
     }
 
@@ -409,14 +480,47 @@ mod tests {
         assert!(attackers(10_000_000.0, 100.0).annihilates(&dome));
     }
 
-    /// A loser whose shots still register keeps its ability to take units with
-    /// it, so the rule declines however lopsided the ratio is. Fifty Rocket
-    /// Launchers against a million Light Fighters: 4000 attack power against
-    /// 50,000,000, and the fighters would still bury fifty of their own.
+    /// A loser whose shots still register is one the shortcut can no longer
+    /// prove anything about, so the rule declines however lopsided the ratio is.
+    /// Fifty Rocket Launchers against a million Light Fighters: 4,000 attack
+    /// power against 50,000,000, and a launcher's 80 is eight times a fighter's
+    /// 10 shield, so it registers.
+    ///
+    /// Registering is not killing, and here it is not even close to it: the
+    /// shot breaks the shield and puts 70 into a 400 hull, which is neither a
+    /// kill nor low enough to roll for an explosion, and
+    /// `cargo run -p combat-cli -- sim -a "lf:1000000" -d "rocketlauncher:50"
+    /// -n 5` duly reports the attacker losing nothing over one round. The
+    /// condition is deliberately the coarser one all the same. "Does this shot
+    /// register" is read straight off `apply_damage_fast`; "could six rounds of
+    /// this shot ever accumulate into a kill" is the battle, and a shortcut
+    /// that had to fight the battle to decide whether to skip it would be no
+    /// shortcut.
     #[test]
     fn a_loser_that_can_still_shoot_back_declines_the_shortcut() {
         let launchers = side(50.0, 80.0, 20.0, 200.0);
         assert!(!light_fighters(1_000_000.0).annihilates(&launchers));
+    }
+
+    /// The budget damage cannot see. Kills are bounded by shots, and the round
+    /// loop hands an armed unit one shot per round: firepower concentrated in
+    /// too few hulls clears the hitpoint margin and still never aims at most of
+    /// the fleet it is supposed to be erasing.
+    ///
+    /// 189 Deathstars at Weapons 255 — weapon 5,300,000, shield 50,000, hull
+    /// 900,000 — against 1,000 Espionage Probes is the battle that found this:
+    /// 1,001,700,000 attack power against 100,000 hitpoints clears the margin,
+    /// and 1,134 shots at 1,000 randomly chosen targets does not clear
+    /// anything. Fought with rapid fire off it is a draw with dozens of probes
+    /// still flying.
+    #[test]
+    fn firepower_concentrated_in_too_few_units_declines_the_shortcut() {
+        let deathstars = |count: f64| side(count, 5_300_000.0, 50_000.0, 900_000.0);
+
+        assert!(!deathstars(189.0).annihilates(&probes(1_000.0)));
+        // Spread the same kind of firepower over enough hulls to aim it and the
+        // rule is allowed to speak again.
+        assert!(deathstars(10_000_000.0).annihilates(&probes(1_000.0)));
     }
 
     /// Firepower that clears the ratio but not the loser's hull: six rounds of
@@ -445,8 +549,13 @@ mod tests {
 
         // Ten Battleships' worth of firepower; the probe adds nothing to it.
         assert_relative_eq!(profile.attack_power, 10_000.0);
-        // ...but its hull is still something the other side has to destroy.
+        // ...but its hull is still something the other side has to destroy,
+        // and it is still one more thing the other side has to aim at.
         assert_relative_eq!(profile.hitpoints, 62_100.0);
+        assert_relative_eq!(profile.units, 11.0);
+        // It contributes no shot per round, though, so it is not part of what
+        // this side is guaranteed to fire.
+        assert_relative_eq!(profile.armed_units, 10.0);
         // The probe sets the frailest shield, because it is the easiest thing
         // on the side to land a hit on...
         assert_relative_eq!(profile.smallest_shield, 0.0);

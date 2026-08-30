@@ -185,13 +185,21 @@ cargo fmt --check \
   9, 250 Light Fighters are worth 23,750 attack power against a Large Shield
   Dome's 1 — 2.4 times over the 10,000 threshold — and still cannot scratch
   it. That is `tests/common/mod.rs`, the shared fixture, and a short-circuit
-  on the ratio alone would report the dome destroyed. So three further
-  conditions, each read off `apply_damage_fast` rather than invented, have to
-  hold as well: the loser's shots must bounce off
+  on the ratio alone would report the dome destroyed. So four further
+  conditions, each read off `apply_damage_fast` and the round loop rather than
+  invented, have to hold as well: the loser's shots must bounce off
   the winner entirely, the winner's must register on everything the loser has,
-  and the winner's firepower must clear the loser's total hitpoints by the same
+  the winner's firepower must clear the loser's total hitpoints by the same
   10,000× margin — the changelog's own number, reused rather than a second
-  constant invented for it. Anything else is simulated, which is slower and
+  constant invented for it — and the winner must fire enough *shots* to have
+  aimed at everything the loser brought, `MAX_ROUNDS` per armed unit against the
+  loser's unit count, at that same margin. **Damage and shots are two budgets
+  and a wipe-out spends both**: `Party::shoot_at` gives an armed unit one shot
+  per round unless rapid fire buys more, so 189 Deathstars at Weapons 255 clear
+  a damage margin against 1,000 Espionage Probes and then fire 1,134 shots at
+  1,000 randomly chosen targets — which with `use_rapid_fire` off is a draw with
+  dozens of probes flying home, not the wipe the damage condition alone
+  reported. Anything else is simulated, which is slower and
   right. **The short-circuit is only ever allowed to be an optimisation**, so
   `Combat::simulate_single_through_the_rounds` exists purely so
   `tests/instant_calculation.rs` can fight the same battle both ways and compare

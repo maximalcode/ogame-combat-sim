@@ -8,7 +8,13 @@ use combat_types::{
 use rand::Rng;
 use std::collections::HashMap;
 
-const MAX_ROUNDS: u8 = 6;
+/// How many rounds a battle lasts at most.
+///
+/// `pub(crate)` because `crate::instant` counts with it: the shots a side is
+/// guaranteed to fire in a whole battle is this many times its armed unit
+/// count, and that budget is one of the two the instant calculation has to see
+/// cleared before it may speak for the rounds.
+pub(crate) const MAX_ROUNDS: u8 = 6;
 
 #[derive(Default, Clone, Debug)]
 struct FireStats {
