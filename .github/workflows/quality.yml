@@ -30,10 +30,35 @@ jobs:
   # once one is cut past 5c9571c9.
   quality:
     uses: maximalcode/maxi-quality/.github/workflows/quality.yml@5c9571c9fc72d86ded7f14fa8c6121603909344f # v1 @ 2026-08-14
+    with:
+      # Passed rather than inherited, even though it is upstream's default
+      # today. The `rust` job below installs its own toolchain — separate jobs,
+      # separate runners — so if upstream advances its default, fmt and clippy
+      # would start running on a different compiler from the tests without a
+      # line changing here. Bump the two together or not at all.
+      rust-version: '1.97.1'
 
-  # Rust Layer 1 (maxi-quality). Toolchain and cargo-deny are PINNED: with
-  # warnings promoted to errors, an analyzer upgrade that adds lints is a
-  # breaking change — bump both deliberately, never via a floating 'stable'.
+  # The two Rust checks the reusable workflow above does NOT run.
+  #
+  # It already does `cargo fmt --all --check`, clippy with -Dwarnings, and
+  # `cargo deny check advisories bans` — all of them at least as broadly as
+  # this file used to, `--all`/`--locked` included. Repeating them here bought
+  # a second opinion from identical commands and doubled the time to red.
+  #
+  # What it leaves are the two things it cannot decide for a consumer:
+  #
+  #   cargo test          — not upstream's to run; it has no idea what a
+  #                         passing suite means here.
+  #   deny check licenses — upstream stops at `advisories bans` and says why:
+  #                         the licence allowlist is repo policy, and this
+  #                         repo's deny.toml holds a filled one.
+  #
+  # The toolchain and cargo-deny installs stay because a job is a fresh
+  # runner; they are setup for the two lines below, not a copy of upstream's.
+  #
+  # THE JOB NAME IS LOAD-BEARING: branch protection on main and develop
+  # requires a check literally named `rust`. Renaming this job silently
+  # un-gates both branches — change the protection first.
   rust:
     runs-on: ubuntu-latest
     steps:
@@ -50,16 +75,9 @@ jobs:
           tar xzf /tmp/cargo-deny.tgz -C "$HOME/.cargo/bin" --strip-components=1 \
             cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo fmt --check
-      # -Dwarnings HERE and not in the manifest: a contributor's local
-      # `cargo check` should warn, not wall them. CI is the gate.
-      - name: cargo clippy — all targets, warnings are errors
-        env:
-          RUSTFLAGS: -Dwarnings
-        run: cargo clippy --workspace --all-targets --locked
-      # licenses is in the list because deny.toml's allowlist is filled — see
-      # the [licenses] comment there for what each entry is carrying.
-      - run: cargo deny check advisories bans licenses
+      # licenses only — see the comment above. deny.toml's [licenses] block
+      # explains what each allowlist entry is carrying.
+      - run: cargo deny check licenses
       # Tests build at opt-level 3 (see [profile.test] in Cargo.toml). The
       # engine is a Monte Carlo loop and runs ~14x slower unoptimised.
       - run: cargo test --workspace --locked
