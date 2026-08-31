@@ -5,8 +5,10 @@ use crate::scaling::{
     upscale_round_compositions, upscale_round_compositions_by_slot, upscale_round_details,
     upscale_slot_results,
 };
-use combat_types::entities::load_entity_stats;
-use combat_types::{CombatRequest, CombatResults, PartyData, PlanetResources, SimulationResult};
+use combat_types::entities::entity_stats;
+use combat_types::{
+    CombatRequest, CombatResults, DebrisSettings, PartyData, PlanetResources, SimulationResult,
+};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rayon::prelude::*;
@@ -17,6 +19,7 @@ pub struct Simulator {
 }
 
 impl Simulator {
+    #[must_use]
     pub fn new() -> Self {
         // Configure Rayon thread pool for optimal performance
         // Use 75% of available CPUs to leave room for other processes
@@ -25,7 +28,7 @@ impl Simulator {
 
         rayon::ThreadPoolBuilder::new()
             .num_threads(sim_threads)
-            .thread_name(|i| format!("combat-sim-{}", i))
+            .thread_name(|i| format!("combat-sim-{i}"))
             .build_global()
             .ok(); // Ignore error if already initialized
 
@@ -40,11 +43,13 @@ impl Simulator {
         attacker_slots: &[(String, PartyData)],
         defender_slots: &[(String, PartyData)],
         use_rapid_fire: bool,
-        planet_resources: &Option<PlanetResources>,
-        debris_percentage: f32,
+        planet_resources: Option<&PlanetResources>,
+        debris_settings: DebrisSettings,
         collect_compositions: bool,
     ) -> SimulationResult {
-        let mut rng = SmallRng::from_os_rng();
+        // Thread-local seed rather than an OS entropy call per battle; see
+        // `simulate_once`.
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
         let single = self.combat.simulate_single_with_slots(
             attacker_slots,
             defender_slots,
@@ -54,17 +59,17 @@ impl Simulator {
         );
 
         // Derive aggregated economic data
-        let entity_db = load_entity_stats();
+        let entity_db = entity_stats();
         let debris_field = economics::calculate_debris(
             &single.attacker_losses,
             &single.defender_losses,
-            &entity_db,
-            debris_percentage,
+            entity_db,
+            debris_settings,
         );
 
         let loot = if let Some(resources) = planet_resources {
             let cargo_capacity =
-                economics::calculate_cargo_capacity(&single.attacker_remaining, &entity_db);
+                economics::calculate_cargo_capacity(&single.attacker_remaining, entity_db);
             economics::calculate_loot(resources, cargo_capacity)
         } else {
             PlanetResources::default()
@@ -74,13 +79,10 @@ impl Simulator {
             &debris_field,
             &loot,
             &single.attacker_losses,
-            &entity_db,
+            entity_db,
         );
-        let defender_profit = economics::calculate_defender_profit(
-            &debris_field,
-            &single.defender_losses,
-            &entity_db,
-        );
+        let defender_profit =
+            economics::calculate_defender_profit(&debris_field, &single.defender_losses, entity_db);
 
         SimulationResult {
             outcome: match single.outcome {
@@ -111,12 +113,16 @@ impl Simulator {
         attacker: &PartyData,
         defender: &PartyData,
         use_rapid_fire: bool,
-        planet_resources: &Option<PlanetResources>,
-        debris_percentage: f32,
+        planet_resources: Option<&PlanetResources>,
+        debris_settings: DebrisSettings,
         collect_compositions: bool,
     ) -> SimulationResult {
-        // Use SmallRng for 3x faster RNG (non-cryptographic but sufficient for simulations)
-        let mut rng = SmallRng::from_os_rng();
+        // `SmallRng` because nothing about a battle needs cryptographic
+        // randomness. Seeded from the thread-local generator rather than
+        // `from_os_rng`, which asks the OS for entropy on *every* battle — a
+        // per-simulation cost that a ten-thousand-battle run pays ten thousand
+        // times for no benefit, since each battle is independent either way.
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
         let result = self.combat.simulate_single(
             attacker,
             defender,
@@ -126,20 +132,20 @@ impl Simulator {
         );
 
         // Load entity database for economic calculations
-        let entity_db = load_entity_stats();
+        let entity_db = entity_stats();
 
         // Calculate debris field
         let debris_field = economics::calculate_debris(
             &result.attacker_losses,
             &result.defender_losses,
-            &entity_db,
-            debris_percentage,
+            entity_db,
+            debris_settings,
         );
 
         // Calculate loot if planet resources are provided
         let loot = if let Some(resources) = planet_resources {
             let cargo_capacity =
-                economics::calculate_cargo_capacity(&result.attacker_remaining, &entity_db);
+                economics::calculate_cargo_capacity(&result.attacker_remaining, entity_db);
             economics::calculate_loot(resources, cargo_capacity)
         } else {
             PlanetResources::default()
@@ -150,14 +156,11 @@ impl Simulator {
             &debris_field,
             &loot,
             &result.attacker_losses,
-            &entity_db,
+            entity_db,
         );
 
-        let defender_profit = economics::calculate_defender_profit(
-            &debris_field,
-            &result.defender_losses,
-            &entity_db,
-        );
+        let defender_profit =
+            economics::calculate_defender_profit(&debris_field, &result.defender_losses, entity_db);
 
         SimulationResult {
             outcome: match result.outcome {
@@ -183,14 +186,34 @@ impl Simulator {
     }
 
     /// Run multiple simulations in parallel and aggregate results
+    // Long for the same reason as `simulate_single_with_slots`: downscaling,
+    // slots and upscaling all have to agree, and the agreement is easier to
+    // read in one place than spread over helpers that must be called in order.
+    #[allow(clippy::too_many_lines)]
     pub fn simulate_multiple(&self, request: &CombatRequest) -> CombatResults {
         let start = std::time::Instant::now();
+
+        // Player and alliance classes are effective technology levels, so each
+        // side's bonuses are folded into its technology once, here, before any
+        // of it reaches combat. Everything downstream — downscaling, the round
+        // loop, the stat cache — goes on seeing a plain `PartyData` and never
+        // learns that classes exist. Per side, because the request carries one
+        // bonus block per side and they are free to differ. Lifeform bonuses
+        // travel on the `PartyData` itself and need no resolution step.
+        let attacker = request.effective_attacker();
+        let defender = request.effective_defender();
+
+        // Resolved once rather than per battle: the precedence between
+        // `universe_settings` and `debris_percentage` cannot vary within a run,
+        // and every simulation must be scored under the same rules.
+        let debris_settings = request.debris_settings();
 
         // Check if we should downscale for large battles
         let downscale_factor = match request.enable_downscaling {
             Some(false) => 1, // Force disable downscaling
-            Some(true) => calculate_downscale_factor(&request.attacker, &request.defender), // Force enable
-            None => calculate_downscale_factor(&request.attacker, &request.defender), // Auto (default)
+            // Explicit opt-in and the default behave identically: the factor
+            // calculation already returns 1 when the fleets are small enough.
+            Some(true) | None => calculate_downscale_factor(&attacker, &defender),
         };
 
         let (attacker_data, defender_data) = if downscale_factor > 1
@@ -199,24 +222,19 @@ impl Simulator {
         {
             // Downscale fleets for massive performance gain
             (
-                downscale_party(&request.attacker, downscale_factor),
-                downscale_party(&request.defender, downscale_factor),
+                downscale_party(&attacker, downscale_factor),
+                downscale_party(&defender, downscale_factor),
             )
         } else {
-            // Use original fleets
-            (request.attacker.clone(), request.defender.clone())
+            // Moved, not cloned: these are already owned copies at effective
+            // levels, and on the path this branch serves — no downscaling, so
+            // fleets of any size up to ten million ships — the clone was of the
+            // whole composition for nothing.
+            (attacker, defender)
         };
         let used_downscaling_non_slot = downscale_factor > 1
             && request.attacker_slots.is_none()
             && request.defender_slots.is_none();
-
-        // For weak computers: limit parallelism to avoid overwhelming the system
-        // Use chunk-based parallelism for better cache locality
-        let chunk_size = if request.simulations < 10 {
-            1
-        } else {
-            (request.simulations / num_cpus::get() as u32).max(1)
-        };
 
         // Store original fleets for precision-preserving upscaling
         let original_attacker = request.attacker.entities.clone();
@@ -233,14 +251,27 @@ impl Simulator {
         ) = if let (Some(a_slots), Some(d_slots)) =
             (&request.attacker_slots, &request.defender_slots)
         {
-            // Build original vectors for simulation
+            // Build original vectors for simulation. A side's bonuses belong to
+            // the player, so every slot on that side fights under them.
             let a_orig: Vec<(String, combat_types::PartyData)> = a_slots
                 .iter()
-                .map(|s| (s.id.clone(), s.data.clone()))
+                .map(|s| {
+                    (
+                        s.id.clone(),
+                        s.data
+                            .at_effective_levels(request.attacker_bonuses.as_ref()),
+                    )
+                })
                 .collect();
             let d_orig: Vec<(String, combat_types::PartyData)> = d_slots
                 .iter()
-                .map(|s| (s.id.clone(), s.data.clone()))
+                .map(|s| {
+                    (
+                        s.id.clone(),
+                        s.data
+                            .at_effective_levels(request.defender_bonuses.as_ref()),
+                    )
+                })
                 .collect();
 
             // Original per-slot totals for precision restoration
@@ -255,23 +286,25 @@ impl Simulator {
                 d_map.insert(s.id.clone(), s.data.entities.clone());
             }
 
-            // Downscaled vectors if needed
+            // Downscaled vectors if needed, taken from the slots above so the
+            // scaled battle is fought at the same effective levels as the
+            // unscaled one.
             let (a_scaled, d_scaled) = if downscale_factor > 1 {
-                let a_s: Vec<(String, combat_types::PartyData)> = a_slots
+                let a_s: Vec<(String, combat_types::PartyData)> = a_orig
                     .iter()
-                    .map(|s| {
+                    .map(|(id, data)| {
                         (
-                            s.id.clone(),
-                            crate::scaling::downscale_party(&s.data, downscale_factor),
+                            id.clone(),
+                            crate::scaling::downscale_party(data, downscale_factor),
                         )
                     })
                     .collect();
-                let d_s: Vec<(String, combat_types::PartyData)> = d_slots
+                let d_s: Vec<(String, combat_types::PartyData)> = d_orig
                     .iter()
-                    .map(|s| {
+                    .map(|(id, data)| {
                         (
-                            s.id.clone(),
-                            crate::scaling::downscale_party(&s.data, downscale_factor),
+                            id.clone(),
+                            crate::scaling::downscale_party(data, downscale_factor),
                         )
                     })
                     .collect();
@@ -304,7 +337,6 @@ impl Simulator {
         // Run simulations in parallel with controlled chunk size
         let simulation_results: Vec<SimulationResult> = (0..request.simulations)
             .into_par_iter()
-            .with_max_len(chunk_size as usize)
             .map(|_| {
                 let collect = request.enable_round_compositions.unwrap_or(false);
                 let result = if let (Some(a_o_arc), Some(d_o_arc)) = (&a_slots_orig, &d_slots_orig)
@@ -317,8 +349,8 @@ impl Simulator {
                             a_s_arc.as_slice(),
                             d_s_arc.as_slice(),
                             request.use_rapid_fire,
-                            &request.planet_resources,
-                            request.debris_percentage,
+                            request.planet_resources.as_ref(),
+                            debris_settings,
                             collect,
                         )
                     } else {
@@ -326,8 +358,8 @@ impl Simulator {
                             a_o_arc.as_slice(),
                             d_o_arc.as_slice(),
                             request.use_rapid_fire,
-                            &request.planet_resources,
-                            request.debris_percentage,
+                            request.planet_resources.as_ref(),
+                            debris_settings,
                             collect,
                         )
                     }
@@ -336,8 +368,8 @@ impl Simulator {
                         &attacker_data,
                         &defender_data,
                         request.use_rapid_fire,
-                        &request.planet_resources,
-                        request.debris_percentage,
+                        request.planet_resources.as_ref(),
+                        debris_settings,
                         collect,
                     )
                 };
@@ -351,14 +383,17 @@ impl Simulator {
                         &original_defender,
                     );
                     // Upscale round compositions for user-facing numbers
-                    up.round_compositions =
-                        upscale_round_compositions(&up.round_compositions, downscale_factor);
+                    up.round_compositions = upscale_round_compositions(
+                        up.round_compositions.as_deref(),
+                        downscale_factor,
+                    );
                     up.round_compositions_by_slot = upscale_round_compositions_by_slot(
-                        &up.round_compositions_by_slot,
+                        up.round_compositions_by_slot.as_ref(),
                         downscale_factor,
                     );
                     // Upscale RoundDetails (shots, hull damage, shield absorb, totals)
-                    up.round_details = upscale_round_details(&up.round_details, downscale_factor);
+                    up.round_details =
+                        upscale_round_details(up.round_details.as_deref(), downscale_factor);
                     // Upscale per-slot results if present
                     if used_downscaling_slots {
                         if let Some(a_slots) = &up.attacker_slots {
@@ -391,15 +426,16 @@ impl Simulator {
 
         // Aggregate results
         let mut results = CombatResults::new(request.simulations);
+        results.debris_settings = debris_settings;
         let mut total_rounds = 0u64;
 
         for result in simulation_results {
-            total_rounds += result.rounds as u64;
+            total_rounds += u64::from(result.rounds);
             results.add_result(result);
         }
 
         results.duration_ms = start.elapsed().as_millis() as u64;
-        results.average_rounds = total_rounds as f64 / request.simulations as f64;
+        results.average_rounds = total_rounds as f64 / f64::from(request.simulations);
 
         results
     }
@@ -431,6 +467,7 @@ mod tests {
                     ..Default::default()
                 },
                 entities: attacker_fleet,
+                ..Default::default()
             },
             defender: PartyData {
                 technology: Technology {
@@ -440,6 +477,7 @@ mod tests {
                     ..Default::default()
                 },
                 entities: defender_fleet,
+                ..Default::default()
             },
             attacker_slots: None,
             defender_slots: None,

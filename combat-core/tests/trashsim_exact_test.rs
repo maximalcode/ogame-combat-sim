@@ -1,4 +1,4 @@
-/// Exact TrashSim test case: 100 Cruisers vs 1000 LFs with RF
+/// Exact `TrashSim` test case: 100 Cruisers vs 1000 LFs with RF
 use combat_core::Simulator;
 use combat_types::{CombatRequest, PartyData, Technology};
 use std::collections::HashMap;
@@ -24,10 +24,12 @@ fn test_100_cruisers_vs_1000_lfs_with_rf() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet.clone(),
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet.clone(),
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,
@@ -55,12 +57,12 @@ fn test_100_cruisers_vs_1000_lfs_with_rf() {
     let mut total_lf_losses = 0u64;
 
     for result in &results.results {
-        total_cruiser_losses += result.attacker_losses.get(&206).copied().unwrap_or(0) as u64;
-        total_lf_losses += result.defender_losses.get(&204).copied().unwrap_or(0) as u64;
+        total_cruiser_losses += u64::from(result.attacker_losses.get(&206).copied().unwrap_or(0));
+        total_lf_losses += u64::from(result.defender_losses.get(&204).copied().unwrap_or(0));
     }
 
-    let avg_cruiser_losses = total_cruiser_losses / results.simulations as u64;
-    let avg_lf_losses = total_lf_losses / results.simulations as u64;
+    let avg_cruiser_losses = total_cruiser_losses / u64::from(results.simulations);
+    let avg_lf_losses = total_lf_losses / u64::from(results.simulations);
 
     println!("Our Results:");
     println!("  Average Rounds: {:.1}", results.average_rounds);
@@ -93,6 +95,6 @@ fn test_100_cruisers_vs_1000_lfs_with_rf() {
     } else {
         println!("  ❌ MISMATCH! Far fewer Cruisers dying than expected.");
         println!("     Expected: ~25 deaths");
-        println!("     Got: {} deaths", avg_cruiser_losses);
+        println!("     Got: {avg_cruiser_losses} deaths");
     }
 }

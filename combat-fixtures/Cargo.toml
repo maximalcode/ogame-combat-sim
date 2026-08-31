@@ -1,0 +1,22 @@
+[package]
+name = "combat-fixtures"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The regression corpus fixture format: parsing, validation and comparison"
+
+# Opts this crate into [workspace.lints] in the root manifest. Cargo does not
+# inherit lints implicitly — a member without these two lines is unlinted.
+[lints]
+workspace = true
+
+# Deliberately no dependency on combat-core. Nothing here runs a battle: the
+# caller passes results in, or hands `run_fixture` a closure. That is what lets
+# a fixture be validated without installing the global rayon pool.
+[dependencies]
+combat-types = { path = "../combat-types", version = "0.1.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }

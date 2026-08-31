@@ -17,17 +17,17 @@ pub fn total_ships(fleet: &FleetComposition) -> usize {
 }
 
 pub fn upscale_round_details(
-    details: &Option<Vec<RoundDetails>>,
+    details: Option<&[RoundDetails]>,
     factor: usize,
 ) -> Option<Vec<RoundDetails>> {
     match details {
         None => None,
         Some(v) => {
             if factor <= 1 {
-                return Some(v.clone());
+                return Some(v.to_vec());
             }
             let mut out = Vec::with_capacity(v.len());
-            for d in v.iter() {
+            for d in v {
                 out.push(RoundDetails {
                     round_number: d.round_number,
                     attackers_start: d.attackers_start.saturating_mul(factor as u32),
@@ -72,14 +72,14 @@ fn upscale_round_comp(rc: &RoundComposition, factor: usize) -> RoundComposition 
 }
 
 pub fn upscale_round_compositions(
-    comps: &Option<Vec<RoundComposition>>,
+    comps: Option<&[RoundComposition]>,
     factor: usize,
 ) -> Option<Vec<RoundComposition>> {
     match comps {
         None => None,
         Some(v) => {
             if factor <= 1 {
-                return Some(v.clone());
+                return Some(v.to_vec());
             }
             Some(v.iter().map(|rc| upscale_round_comp(rc, factor)).collect())
         }
@@ -87,7 +87,7 @@ pub fn upscale_round_compositions(
 }
 
 pub fn upscale_round_compositions_by_slot(
-    by_slot: &Option<std::collections::HashMap<String, Vec<RoundComposition>>>,
+    by_slot: Option<&std::collections::HashMap<String, Vec<RoundComposition>>>,
     factor: usize,
 ) -> Option<std::collections::HashMap<String, Vec<RoundComposition>>> {
     match by_slot {
@@ -97,7 +97,7 @@ pub fn upscale_round_compositions_by_slot(
                 return Some(map.clone());
             }
             let mut out = std::collections::HashMap::with_capacity(map.len());
-            for (k, v) in map.iter() {
+            for (k, v) in map {
                 out.insert(
                     k.clone(),
                     v.iter().map(|rc| upscale_round_comp(rc, factor)).collect(),
@@ -123,18 +123,17 @@ pub fn upscale_slot_results(
             // Normalize key: simulate_single_with_slots labels as "A1"/"D1".
             // We accept either exact match or without first char; prefer exact.
             let empty: FleetComposition = HashMap::new();
-            let orig = match original_per_slot.get(&s.slot_id) {
-                Some(o) => o,
-                None => {
-                    let trimmed = s.slot_id.trim_start_matches(prefix).to_string();
-                    original_per_slot.get(&trimmed).unwrap_or(&empty)
-                }
+            let orig = if let Some(o) = original_per_slot.get(&s.slot_id) {
+                o
+            } else {
+                let trimmed = s.slot_id.trim_start_matches(prefix).to_string();
+                original_per_slot.get(&trimmed).unwrap_or(&empty)
             };
 
             let mut remaining: FleetComposition = HashMap::new();
             let mut initial: FleetComposition = HashMap::new();
 
-            for (&t, &orig_c) in orig.iter() {
+            for (&t, &orig_c) in orig {
                 let scaled_losses = s.losses.get(&t).copied().unwrap_or(0) * factor as u32;
                 let rem = if scaled_losses == 0 {
                     orig_c
@@ -151,7 +150,7 @@ pub fn upscale_slot_results(
 
             // Ensure losses = initial - remaining
             let mut losses: FleetComposition = HashMap::new();
-            for (&t, &init_c) in initial.iter() {
+            for (&t, &init_c) in &initial {
                 let rem = remaining.get(&t).copied().unwrap_or(0);
                 if init_c > rem {
                     losses.insert(t, init_c - rem);
@@ -169,12 +168,14 @@ pub fn upscale_slot_results(
 }
 
 /// Determine if a battle should be downscaled
+#[must_use]
 pub fn should_downscale(attacker: &PartyData, defender: &PartyData) -> bool {
     let total = total_ships(&attacker.entities) + total_ships(&defender.entities);
     total > DOWNSCALE_THRESHOLD
 }
 
 /// Calculate appropriate downscale factor based on fleet size
+#[must_use]
 pub fn calculate_downscale_factor(attacker: &PartyData, defender: &PartyData) -> usize {
     let total = total_ships(&attacker.entities) + total_ships(&defender.entities);
 
@@ -213,15 +214,21 @@ pub fn downscale_fleet(fleet: &FleetComposition, factor: usize) -> FleetComposit
 }
 
 /// Downscale party data
+#[must_use]
 pub fn downscale_party(party: &PartyData, factor: usize) -> PartyData {
     PartyData {
         technology: party.technology,
         entities: downscale_fleet(&party.entities, factor),
+        // Downscaling divides ship counts. Stat modifiers are per ship and do
+        // not divide with them, so both technology and lifeform bonuses come
+        // through untouched — a tenth of the fleet still shoots at full power.
+        lifeform: party.lifeform.clone(),
     }
 }
 
 /// Scale up simulation results with precision preservation
 /// This version tries to preserve the original fleet counts for survivors
+#[must_use]
 pub fn upscale_result_with_originals(
     result: &SimulationResult,
     factor: usize,
@@ -256,6 +263,7 @@ pub fn upscale_result_with_originals(
     let debris_field = combat_types::DebrisField {
         metal: result.debris_field.metal * factor as u64,
         crystal: result.debris_field.crystal * factor as u64,
+        deuterium: result.debris_field.deuterium * factor as u64,
     };
 
     // Scale up loot proportionally
@@ -285,6 +293,7 @@ pub fn upscale_result_with_originals(
 }
 
 /// Scale up simulation results (legacy, for compatibility)
+#[must_use]
 pub fn upscale_result(result: &SimulationResult, factor: usize) -> SimulationResult {
     if factor <= 1 {
         return result.clone();
@@ -294,6 +303,7 @@ pub fn upscale_result(result: &SimulationResult, factor: usize) -> SimulationRes
     let debris_field = combat_types::DebrisField {
         metal: result.debris_field.metal * factor as u64,
         crystal: result.debris_field.crystal * factor as u64,
+        deuterium: result.debris_field.deuterium * factor as u64,
     };
 
     // Scale up loot proportionally
@@ -361,7 +371,7 @@ fn upscale_fleet(fleet: &FleetComposition, factor: usize) -> FleetComposition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use combat_types::Technology;
+    use combat_types::{LifeformBonus, LifeformBonuses, Technology};
     use std::collections::HashMap;
 
     #[test]
@@ -388,6 +398,7 @@ mod tests {
         let small_party = PartyData {
             technology: tech,
             entities: small_fleet,
+            ..Default::default()
         };
 
         assert!(!should_downscale(&small_party, &small_party));
@@ -398,6 +409,7 @@ mod tests {
         let large_party = PartyData {
             technology: tech,
             entities: large_fleet,
+            ..Default::default()
         };
 
         assert!(should_downscale(&large_party, &large_party));
@@ -426,6 +438,27 @@ mod tests {
         assert_eq!(downscaled.get(&204), Some(&1));
     }
 
+    /// Downscaling divides ship counts, and a stat modifier is per ship. A
+    /// tenth of the fleet has to shoot at full power, or every battle over ten
+    /// million ships silently loses its lifeform research.
+    #[test]
+    fn downscaling_a_party_keeps_its_stat_modifiers() {
+        let party = PartyData {
+            technology: Technology {
+                weapon: 12,
+                ..Default::default()
+            },
+            entities: HashMap::from([(204, 20_000_000)]),
+            lifeform: LifeformBonuses::from_iter([(204, LifeformBonus::uniform(25.0))]),
+        };
+
+        let downscaled = downscale_party(&party, 10);
+
+        assert_eq!(downscaled.entities.get(&204), Some(&2_000_000));
+        assert_eq!(downscaled.technology, party.technology);
+        assert_eq!(downscaled.lifeform, party.lifeform);
+    }
+
     #[test]
     fn test_upscale_result() {
         use combat_types::CombatOutcome;
@@ -446,6 +479,7 @@ mod tests {
             debris_field: combat_types::DebrisField {
                 metal: 1000,
                 crystal: 500,
+                deuterium: 250,
             },
             loot: combat_types::PlanetResources {
                 metal: 2000,
@@ -470,11 +504,14 @@ mod tests {
         // Verify economic fields scale correctly
         assert_eq!(upscaled.debris_field.metal, 10000);
         assert_eq!(upscaled.debris_field.crystal, 5000);
+        // Deuterium debris scales with the rest of the field, or a downscaled
+        // run in a deuterium universe would under-report it tenfold.
+        assert_eq!(upscaled.debris_field.deuterium, 2500);
         assert_eq!(upscaled.loot.metal, 20000);
         assert_eq!(upscaled.loot.crystal, 10000);
         assert_eq!(upscaled.loot.deuterium, 5000);
         assert_eq!(upscaled.attacker_profit, 50000);
-        assert_eq!(upscaled.defender_profit, -30000)
+        assert_eq!(upscaled.defender_profit, -30000);
     }
 
     #[test]
@@ -492,6 +529,7 @@ mod tests {
         let party1 = PartyData {
             technology: tech,
             entities: fleet1,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party1, &party1), 1);
 
@@ -501,6 +539,7 @@ mod tests {
         let party2 = PartyData {
             technology: tech,
             entities: fleet2,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party2, &party2), 10);
 
@@ -510,6 +549,7 @@ mod tests {
         let party3 = PartyData {
             technology: tech,
             entities: fleet3,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party3, &party3), 50);
 
@@ -519,6 +559,7 @@ mod tests {
         let party4 = PartyData {
             technology: tech,
             entities: fleet4,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party4, &party4), 100);
 
@@ -528,6 +569,7 @@ mod tests {
         let party5 = PartyData {
             technology: tech,
             entities: fleet5,
+            ..Default::default()
         };
         assert_eq!(calculate_downscale_factor(&party5, &party5), 10);
     }

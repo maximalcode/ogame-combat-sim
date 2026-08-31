@@ -29,10 +29,12 @@ fn test_explosion_mechanics_directly() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet.clone(),
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet.clone(),
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,
@@ -69,16 +71,16 @@ fn test_explosion_mechanics_directly() {
     let mut total_lf_losses = 0u64;
 
     for result in &results.results {
-        total_lf_losses += result.attacker_losses.get(&204).copied().unwrap_or(0) as u64;
-        total_cruiser_losses += result.defender_losses.get(&206).copied().unwrap_or(0) as u64;
+        total_lf_losses += u64::from(result.attacker_losses.get(&204).copied().unwrap_or(0));
+        total_cruiser_losses += u64::from(result.defender_losses.get(&206).copied().unwrap_or(0));
     }
 
-    let avg_lf_losses = total_lf_losses / results.simulations as u64;
-    let avg_cruiser_losses = total_cruiser_losses / results.simulations as u64;
+    let avg_lf_losses = total_lf_losses / u64::from(results.simulations);
+    let avg_cruiser_losses = total_cruiser_losses / u64::from(results.simulations);
 
     println!("Results:");
-    println!("  Average LF Losses: {} / 5000", avg_lf_losses);
-    println!("  Average Cruiser Losses: {} / 100", avg_cruiser_losses);
+    println!("  Average LF Losses: {avg_lf_losses} / 5000");
+    println!("  Average Cruiser Losses: {avg_cruiser_losses} / 100");
     println!("  Average Rounds: {:.1}", results.average_rounds);
     println!("  Attacker (LF) Wins: {}", results.attacker_wins);
     println!("  Defender (Cruiser) Wins: {}", results.defender_wins);

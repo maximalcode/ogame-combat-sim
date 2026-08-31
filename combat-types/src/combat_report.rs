@@ -1,6 +1,6 @@
 use crate::{CombatOutcome, DebrisField, FleetComposition, PlanetResources, Technology};
 /// Comprehensive combat report structure for displaying in-game
-/// This mirrors what players see in OGame combat reports
+/// This mirrors what players see in `OGame` combat reports
 use serde::{Deserialize, Serialize};
 
 /// Participant in combat (attacker or defender)
@@ -17,7 +17,10 @@ pub struct Participant {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coordinates: Option<String>,
 
-    /// Technology levels
+    /// The technology levels this participant fought at — effective levels,
+    /// so a General's two and a Warrior alliance's one are already in them.
+    /// Not necessarily the levels the request asked for; see
+    /// [`Technology::effective_levels`].
     pub technology: Technology,
 
     /// Alliance name (optional)
@@ -44,6 +47,7 @@ pub struct ResourceCost {
 }
 
 impl ResourceCost {
+    #[must_use]
     pub fn total(&self) -> u64 {
         self.metal + self.crystal + self.deuterium
     }
@@ -119,7 +123,12 @@ pub struct MoonDestructionInfo {
     pub moon_size: u32,
 }
 
-/// Economic summary of the battle
+/// Economic summary of the battle.
+///
+/// `attacker_profit` and `defender_profit` are alternative scenarios: each assumes that side
+/// harvests the entire debris field. They are not two halves of one ledger, and summing them
+/// double-counts the field. Both use [`DebrisField::total`], so defence debris and deuterium
+/// debris affect both figures when enabled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EconomicSummary {
     /// Debris field created
@@ -137,10 +146,10 @@ pub struct EconomicSummary {
     /// Defender's cost of losses
     pub defender_losses_cost: ResourceCost,
 
-    /// Attacker's net profit (debris + plunder - losses)
+    /// Attacker's net profit, assuming the attacker harvests the entire field
     pub attacker_profit: i64,
 
-    /// Defender's net profit (debris - losses)
+    /// Defender's net profit, assuming the defender harvests the entire field
     pub defender_profit: i64,
 
     /// Harvest info (if applicable)
@@ -239,6 +248,7 @@ pub enum BattleType {
 
 impl CombatReport {
     /// Create a report ID from timestamp and participants
+    #[must_use]
     pub fn generate_battle_id(
         timestamp: u64,
         attacker_id: Option<u64>,
@@ -253,7 +263,8 @@ impl CombatReport {
     }
 
     /// Calculate moon creation chance based on debris size
-    /// OGame formula: chance = min(20%, debris_size / 100_000)
+    /// `OGame` formula: chance = min(20%, `debris_size` / `100_000`)
+    #[must_use]
     pub fn calculate_moon_chance(debris_field: &DebrisField) -> f64 {
         let debris_total = debris_field.total() as f64;
 
@@ -262,6 +273,7 @@ impl CombatReport {
 
     /// Calculate recyclers needed for debris collection
     /// Each recycler has 20k cargo capacity
+    #[must_use]
     pub fn calculate_recyclers_needed(debris_field: &DebrisField) -> u32 {
         const RECYCLER_CAPACITY: u64 = 20_000;
         let total_debris = debris_field.total();
@@ -270,19 +282,21 @@ impl CombatReport {
 
     /// Estimate harvest time based on debris and distance
     /// Simplified formula - you can adjust based on your game mechanics
+    #[must_use]
     pub fn estimate_harvest_time(recyclers: u32, debris_field: &DebrisField) -> u32 {
         const SECONDS_PER_TRIP: u32 = 60; // Placeholder - adjust based on distance
         if recyclers == 0 {
             return 0;
         }
         let total_debris = debris_field.total();
-        let capacity = recyclers as u64 * 20_000;
+        let capacity = u64::from(recyclers) * 20_000;
         let trips = total_debris.div_ceil(capacity).max(1);
         trips as u32 * SECONDS_PER_TRIP
     }
 }
 
 /// Helper function to classify battle type
+#[must_use]
 pub fn classify_battle_type(
     attacker_ships: &FleetComposition,
     defender_ships: &FleetComposition,

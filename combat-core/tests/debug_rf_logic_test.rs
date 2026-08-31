@@ -25,10 +25,12 @@ fn test_minimal_rf_debug() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet.clone(),
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet.clone(),
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,
@@ -52,8 +54,8 @@ fn test_minimal_rf_debug() {
     let cruiser_losses_rf = result_rf.attacker_losses.get(&206).copied().unwrap_or(0);
 
     println!("WITH RAPID FIRE:");
-    println!("  LFs killed: {} / 10", lf_losses_rf);
-    println!("  Cruiser killed: {} / 1", cruiser_losses_rf);
+    println!("  LFs killed: {lf_losses_rf} / 10");
+    println!("  Cruiser killed: {cruiser_losses_rf} / 1");
     println!("  Rounds: {}", result_rf.rounds);
     println!();
 
@@ -62,10 +64,12 @@ fn test_minimal_rf_debug() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet.clone(),
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet.clone(),
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,
@@ -88,8 +92,8 @@ fn test_minimal_rf_debug() {
     let cruiser_losses_no_rf = result_no_rf.attacker_losses.get(&206).copied().unwrap_or(0);
 
     println!("WITHOUT RAPID FIRE:");
-    println!("  LFs killed: {} / 10", lf_losses_no_rf);
-    println!("  Cruiser killed: {} / 1", cruiser_losses_no_rf);
+    println!("  LFs killed: {lf_losses_no_rf} / 10");
+    println!("  Cruiser killed: {cruiser_losses_no_rf} / 1");
     println!("  Rounds: {}", result_no_rf.rounds);
     println!();
 
@@ -100,8 +104,8 @@ fn test_minimal_rf_debug() {
 
     if lf_losses_rf > lf_losses_no_rf {
         println!("  ✅ RF IS working (kills more LFs)");
-        println!("     RF: {} LFs killed", lf_losses_rf);
-        println!("     No RF: {} LFs killed", lf_losses_no_rf);
+        println!("     RF: {lf_losses_rf} LFs killed");
+        println!("     No RF: {lf_losses_no_rf} LFs killed");
     } else {
         println!("  ❌ RF NOT working (same or fewer LFs killed)");
     }

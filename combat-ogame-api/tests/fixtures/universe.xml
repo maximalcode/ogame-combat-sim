@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<universe timestamp="1700000200" serverId="en123">
+  <planet id="100" player="7" name="Analytical Engine" coords="1:2:3">
+    <moon id="101" name="Lovelace" size="8888"/>
+  </planet>
+  <planet id="200" player="8" name="Compiler" coords="2:3:4"/>
+</universe>

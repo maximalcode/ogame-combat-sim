@@ -1,3 +1,8 @@
+// A scenario script: set up a fleet, run it, print the numbers, assert on
+// them. Length here is the scenario being explicit, not a function doing
+// too much, so clippy::too_many_lines is waived for the file.
+#![allow(clippy::too_many_lines)]
+
 /// Comprehensive downscaling accuracy tests
 ///
 /// This test suite compares downscaled simulations with full simulations
@@ -18,15 +23,16 @@ fn create_party(ship_type: u16, count: u32, tech: Technology) -> PartyData {
     PartyData {
         technology: tech,
         entities: create_fleet(ship_type, count),
+        ..Default::default()
     }
 }
 
 /// Calculate win rate from results
 fn calculate_win_rate(results: &combat_types::CombatResults) -> (f64, f64, f64) {
-    let total = results.simulations as f64;
-    let attacker_rate = (results.attacker_wins as f64 / total) * 100.0;
-    let defender_rate = (results.defender_wins as f64 / total) * 100.0;
-    let draw_rate = (results.draws as f64 / total) * 100.0;
+    let total = f64::from(results.simulations);
+    let attacker_rate = (f64::from(results.attacker_wins) / total) * 100.0;
+    let defender_rate = (f64::from(results.defender_wins) / total) * 100.0;
+    let draw_rate = (f64::from(results.draws) / total) * 100.0;
     (attacker_rate, defender_rate, draw_rate)
 }
 
@@ -47,12 +53,12 @@ fn calculate_loss_percentage(
         };
 
         if let Some(&count) = losses.get(&ship_type) {
-            total_losses += count as u64;
+            total_losses += u64::from(count);
         }
     }
 
-    let avg_losses = total_losses as f64 / results.simulations as f64;
-    (avg_losses / initial_count as f64) * 100.0
+    let avg_losses = total_losses as f64 / f64::from(results.simulations);
+    (avg_losses / f64::from(initial_count)) * 100.0
 }
 
 #[test]
@@ -77,12 +83,12 @@ fn test_20m_ships_downscaling_accuracy() {
     println!("  Attackers: 10,000,000 Cruisers (Type 206)");
     println!("  Defenders: 10,000,000 Light Fighters (Type 204)");
     println!("  Technology: Weapon 10, Shield 10, Armour 10");
-    println!("  Simulations: {}", simulations);
+    println!("  Simulations: {simulations}");
     println!();
 
     // Calculate downscale factor
     let downscale_factor = calculate_downscale_factor(&attacker, &defender);
-    println!("Downscale Factor: {}x", downscale_factor);
+    println!("Downscale Factor: {downscale_factor}x");
     println!(
         "Downscaled Fleet: {} Cruisers vs {} Light Fighters\n",
         10_000_000 / downscale_factor,
@@ -90,7 +96,7 @@ fn test_20m_ships_downscaling_accuracy() {
     );
 
     // Test 1: WITH downscaling (automatic)
-    println!("--- Test 1: WITH Downscaling ({}x) ---", downscale_factor);
+    println!("--- Test 1: WITH Downscaling ({downscale_factor}x) ---");
     let request_with_scaling = CombatRequest {
         attacker: attacker.clone(),
         defender: defender.clone(),
@@ -116,14 +122,14 @@ fn test_20m_ships_downscaling_accuracy() {
     let att_loss_scaled = calculate_loss_percentage(&results_with_scaling, 206, 10_000_000, true);
     let def_loss_scaled = calculate_loss_percentage(&results_with_scaling, 204, 10_000_000, false);
 
-    println!("Time: {:?}", time_with_scaling);
+    println!("Time: {time_with_scaling:?}");
     println!("Win Rates:");
-    println!("  Attackers: {:.2}%", att_win_scaled);
-    println!("  Defenders: {:.2}%", def_win_scaled);
-    println!("  Draws: {:.2}%", draw_scaled);
+    println!("  Attackers: {att_win_scaled:.2}%");
+    println!("  Defenders: {def_win_scaled:.2}%");
+    println!("  Draws: {draw_scaled:.2}%");
     println!("Average Loss Rates:");
-    println!("  Attacker Losses: {:.2}%", att_loss_scaled);
-    println!("  Defender Losses: {:.2}%", def_loss_scaled);
+    println!("  Attacker Losses: {att_loss_scaled:.2}%");
+    println!("  Defender Losses: {def_loss_scaled:.2}%");
     println!("Average Rounds: {:.2}", results_with_scaling.average_rounds);
     println!();
 
@@ -160,28 +166,28 @@ fn test_20m_ships_downscaling_accuracy() {
         // Take the first result and upscale it
         if let Some(sim_result) = result.results.first() {
             let upscaled = upscale_result(sim_result, downscale_factor);
-            total_rounds += upscaled.rounds as u64;
+            total_rounds += u64::from(upscaled.rounds);
             results_no_scaling.add_result(upscaled);
         }
     }
 
     let time_no_scaling = start.elapsed();
     results_no_scaling.duration_ms = time_no_scaling.as_millis() as u64;
-    results_no_scaling.average_rounds = total_rounds as f64 / simulations as f64;
+    results_no_scaling.average_rounds = total_rounds as f64 / f64::from(simulations);
 
     let (att_win_no_scale, def_win_no_scale, draw_no_scale) =
         calculate_win_rate(&results_no_scaling);
     let att_loss_no_scale = calculate_loss_percentage(&results_no_scaling, 206, 10_000_000, true);
     let def_loss_no_scale = calculate_loss_percentage(&results_no_scaling, 204, 10_000_000, false);
 
-    println!("Time: {:?}", time_no_scaling);
+    println!("Time: {time_no_scaling:?}");
     println!("Win Rates:");
-    println!("  Attackers: {:.2}%", att_win_no_scale);
-    println!("  Defenders: {:.2}%", def_win_no_scale);
-    println!("  Draws: {:.2}%", draw_no_scale);
+    println!("  Attackers: {att_win_no_scale:.2}%");
+    println!("  Defenders: {def_win_no_scale:.2}%");
+    println!("  Draws: {draw_no_scale:.2}%");
     println!("Average Loss Rates:");
-    println!("  Attacker Losses: {:.2}%", att_loss_no_scale);
-    println!("  Defender Losses: {:.2}%", def_loss_no_scale);
+    println!("  Attacker Losses: {att_loss_no_scale:.2}%");
+    println!("  Defender Losses: {def_loss_no_scale:.2}%");
     println!("Average Rounds: {:.2}", results_no_scaling.average_rounds);
     println!();
 
@@ -248,13 +254,10 @@ fn test_statistical_variance_by_fleet_size() {
     let test_cases = vec![(100_000, "100K"), (1_000_000, "1M"), (10_000_000, "10M")];
 
     println!("Testing variance at different fleet sizes:");
-    println!(
-        "(Cruisers vs Light Fighters, {} simulations each)\n",
-        simulations
-    );
+    println!("(Cruisers vs Light Fighters, {simulations} simulations each)\n");
 
     for (fleet_size, label) in test_cases {
-        println!("--- Fleet Size: {} ships per side ---", label);
+        println!("--- Fleet Size: {label} ships per side ---");
 
         let attacker = create_party(206, fleet_size, tech);
         let defender = create_party(204, fleet_size, tech);
@@ -279,9 +282,9 @@ fn test_statistical_variance_by_fleet_size() {
         let results = simulator.simulate_multiple(&request);
         let (att_win, def_win, draws) = calculate_win_rate(&results);
 
-        println!("  Attacker Wins: {:.1}%", att_win);
-        println!("  Defender Wins: {:.1}%", def_win);
-        println!("  Draws: {:.1}%", draws);
+        println!("  Attacker Wins: {att_win:.1}%");
+        println!("  Defender Wins: {def_win:.1}%");
+        println!("  Draws: {draws:.1}%");
         println!("  Average Rounds: {:.2}", results.average_rounds);
         println!();
     }
@@ -306,8 +309,8 @@ fn test_50m_ships_performance() {
 
     let downscale_factor = calculate_downscale_factor(&attacker, &defender);
     println!("Fleet: 25M Cruisers vs 25M Light Fighters");
-    println!("Downscale Factor: {}x", downscale_factor);
-    println!("Simulations: {}", simulations);
+    println!("Downscale Factor: {downscale_factor}x");
+    println!("Simulations: {simulations}");
     println!();
 
     let request = CombatRequest {
@@ -333,23 +336,23 @@ fn test_50m_ships_performance() {
     let (att_win, def_win, draws) = calculate_win_rate(&results);
 
     println!("Results:");
-    println!("  Time: {:?}", duration);
-    println!("  Attacker Wins: {:.1}%", att_win);
-    println!("  Defender Wins: {:.1}%", def_win);
-    println!("  Draws: {:.1}%", draws);
+    println!("  Time: {duration:?}");
+    println!("  Attacker Wins: {att_win:.1}%");
+    println!("  Defender Wins: {def_win:.1}%");
+    println!("  Draws: {draws:.1}%");
     println!("  Average Rounds: {:.2}", results.average_rounds);
     println!();
 
     // With 50M ships and 50x downscaling, we're simulating 1M ships
     // This should be very fast and still accurate
     println!("Expected accuracy: ~98% (±2% variance)");
-    println!("Expected time: <1 second for {} simulations", simulations);
+    println!("Expected time: <1 second for {simulations} simulations");
     println!();
 
-    if !cfg!(debug_assertions) {
-        assert!(duration.as_secs() < 5, "Should complete in under 5 seconds");
-    } else {
+    if cfg!(debug_assertions) {
         println!("(debug) Skipping strict time assertion; debug builds are significantly slower");
+    } else {
+        assert!(duration.as_secs() < 5, "Should complete in under 5 seconds");
     }
     println!("✅ Performance test PASSED!");
 }

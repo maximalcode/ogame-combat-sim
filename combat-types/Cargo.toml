@@ -8,6 +8,18 @@ license.workspace = true
 repository.workspace = true
 description = "Shared data model for the OGame combat simulator: requests, results, reports and ship stats"
 
+# Opts this crate into [workspace.lints] in the root manifest. Cargo does not
+# inherit lints implicitly — a member without these two lines is unlinted.
+[lints]
+workspace = true
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# Dev only, so nothing is added to what this crate ships. Lifeform bonuses are
+# percentages that reach a stat through a chain of f32 multiplies, and
+# `assert_eq!` on one of those asserts bit equality rather than the number the
+# test means.
+[dev-dependencies]
+approx = { workspace = true }

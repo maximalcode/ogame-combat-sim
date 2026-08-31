@@ -1,0 +1,25 @@
+# Frontend-local ignores. The repo root .gitignore already covers node_modules,
+# dist and .vite, but keeping a local file makes `frontend/` self-contained for
+# anyone who copies it out.
+
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+
+# vite cache
+.vite/
+
+# tsc incremental build info (from `tsc --noEmit`)
+*.tsbuildinfo
+
+# local env (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*

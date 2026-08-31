@@ -1,0 +1,32 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // The baseline describes a Node library; the overrides below are the parts
+    // that are genuinely different for a browser app bundled by Vite. Nothing
+    // from the baseline's strict family is relaxed here — see tsconfig.base.json.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+
+    // Vite emits the bundle; tsc is only ever a type checker here, so the
+    // baseline's declaration/sourcemap output has nothing to write.
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "types": ["node"],
+
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

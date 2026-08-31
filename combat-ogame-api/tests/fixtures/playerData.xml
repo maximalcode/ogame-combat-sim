@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<playerData timestamp="1700000300" serverId="en123" id="7" name="Ada">
+  <positions>
+    <position type="0" score="123456"/>
+    <position type="3" score="98765" ships="4321"/>
+    <position type="7" score=""/>
+  </positions>
+  <planets>
+    <planet id="100" name="Analytical Engine" coords="1:2:3">
+      <moon id="101" name="Lovelace" size="8888"/>
+    </planet>
+  </planets>
+</playerData>

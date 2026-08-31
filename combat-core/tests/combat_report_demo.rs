@@ -1,3 +1,8 @@
+// A scenario script: set up a fleet, run it, print the numbers, assert on
+// them. Length here is the scenario being explicit, not a function doing
+// too much, so clippy::too_many_lines is waived for the file.
+#![allow(clippy::too_many_lines)]
+
 /// Demonstration of comprehensive combat report generation
 use combat_core::{ReportBuilder, Simulator};
 use combat_types::{CombatRequest, PartyData, PlanetResources, Technology};
@@ -34,10 +39,12 @@ fn test_generate_detailed_combat_report() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet.clone(),
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet.clone(),
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,
@@ -111,7 +118,7 @@ fn test_generate_detailed_combat_report() {
     println!("┌─ INITIAL FLEETS ──────────────────────────────────────────┐");
     println!("│ Attacker:");
     for (entity_type, count) in &report.attacker_fleet_start.ships {
-        println!("│   • Type {}: {} ships", entity_type, count);
+        println!("│   • Type {entity_type}: {count} ships");
     }
     println!(
         "│   Total Value: {} M / {} C / {} D",
@@ -122,7 +129,7 @@ fn test_generate_detailed_combat_report() {
     println!("│");
     println!("│ Defender:");
     for (entity_type, count) in &report.defender_fleet_start.ships {
-        println!("│   • Type {}: {} ships", entity_type, count);
+        println!("│   • Type {entity_type}: {count} ships");
     }
     println!(
         "│   Total Value: {} M / {} C / {} D",
@@ -136,7 +143,7 @@ fn test_generate_detailed_combat_report() {
     println!("┌─ LOSSES ──────────────────────────────────────────────────┐");
     println!("│ Attacker Lost:");
     for (entity_type, count) in &report.attacker_losses.ships {
-        println!("│   • Type {}: {} ships", entity_type, count);
+        println!("│   • Type {entity_type}: {count} ships");
     }
     println!(
         "│   Cost: {} M / {} C / {} D",
@@ -147,7 +154,7 @@ fn test_generate_detailed_combat_report() {
     println!("│");
     println!("│ Defender Lost:");
     for (entity_type, count) in &report.defender_losses.ships {
-        println!("│   • Type {}: {} ships", entity_type, count);
+        println!("│   • Type {entity_type}: {count} ships");
     }
     println!(
         "│   Cost: {} M / {} C / {} D",
@@ -195,7 +202,7 @@ fn test_generate_detailed_combat_report() {
         println!("│   • All destroyed!");
     } else {
         for (entity_type, count) in &report.attacker_fleet_end.ships {
-            println!("│   • Type {}: {} ships", entity_type, count);
+            println!("│   • Type {entity_type}: {count} ships");
         }
     }
     println!("│");
@@ -204,7 +211,7 @@ fn test_generate_detailed_combat_report() {
         println!("│   • All destroyed!");
     } else {
         for (entity_type, count) in &report.defender_fleet_end.ships {
-            println!("│   • Type {}: {} ships", entity_type, count);
+            println!("│   • Type {entity_type}: {count} ships");
         }
     }
     println!("└───────────────────────────────────────────────────────────┘\n");
@@ -235,12 +242,14 @@ fn test_generate_detailed_combat_report() {
             .get(&206)
             .copied()
             .unwrap_or(0),
-        summary_report
-            .attacker_losses
-            .ships
-            .get(&206)
-            .copied()
-            .unwrap_or(0) as f64
+        f64::from(
+            summary_report
+                .attacker_losses
+                .ships
+                .get(&206)
+                .copied()
+                .unwrap_or(0)
+        )
     );
     println!(
         "   • Defender Losses: {} / 1000 LFs ({:.0}%)",
@@ -250,13 +259,14 @@ fn test_generate_detailed_combat_report() {
             .get(&204)
             .copied()
             .unwrap_or(0),
-        summary_report
-            .defender_losses
-            .ships
-            .get(&204)
-            .copied()
-            .unwrap_or(0) as f64
-            / 10.0
+        f64::from(
+            summary_report
+                .defender_losses
+                .ships
+                .get(&204)
+                .copied()
+                .unwrap_or(0)
+        ) / 10.0
     );
     println!(
         "   • Avg Debris: {}",
@@ -301,10 +311,12 @@ fn test_json_serialization() {
         attacker: PartyData {
             technology: tech,
             entities: attacker_fleet,
+            ..Default::default()
         },
         defender: PartyData {
             technology: tech,
             entities: defender_fleet,
+            ..Default::default()
         },
         attacker_slots: None,
         defender_slots: None,
@@ -329,7 +341,7 @@ fn test_json_serialization() {
     // Serialize to JSON
     let json = serde_json::to_string_pretty(&report).expect("Failed to serialize report");
 
-    println!("\n📄 Full JSON Report:\n{}", json);
+    println!("\n📄 Full JSON Report:\n{json}");
 
     // Deserialize back
     let _deserialized: combat_types::CombatReport =

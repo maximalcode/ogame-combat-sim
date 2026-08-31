@@ -1,4 +1,5 @@
 use crate::entity::Entity;
+use crate::instant::InstantCalculation;
 use crate::stats::StatsCache;
 use combat_types::{
     EntityStats, EntityType, FleetComposition, PartyData, RoundComposition, RoundDetails,
@@ -7,7 +8,13 @@ use combat_types::{
 use rand::Rng;
 use std::collections::HashMap;
 
-const MAX_ROUNDS: u8 = 6;
+/// How many rounds a battle lasts at most.
+///
+/// `pub(crate)` because `crate::instant` counts with it: the shots a side is
+/// guaranteed to fire in a whole battle is this many times its armed unit
+/// count, and that budget is one of the two the instant calculation has to see
+/// cleared before it may speak for the rounds.
+pub(crate) const MAX_ROUNDS: u8 = 6;
 
 #[derive(Default, Clone, Debug)]
 struct FireStats {
@@ -42,6 +49,7 @@ mod tests {
                 ..Default::default()
             },
             entities: a_entities,
+            ..Default::default()
         };
         let defender = PartyData {
             technology: Technology {
@@ -51,6 +59,7 @@ mod tests {
                 ..Default::default()
             },
             entities: d_entities,
+            ..Default::default()
         };
 
         // Use identical RNG seeds for the two runs
@@ -205,6 +214,12 @@ impl Party {
 
             let attacker_type = entity.entity_type;
             let weapon_power = entity.weapon_power;
+            // Hoisted out of the shot loop below. `attacker_type` is fixed for
+            // this entity, so the outer lookup returns the same table on every
+            // rapid-fire shot — and with rapid fire a single Deathstar can take
+            // over a thousand shots in one round, each of which was re-hashing
+            // the same key.
+            let rapid_fire_against = self.rapid_fire_map.get(&attacker_type);
 
             // Shoot at least once
             loop {
@@ -227,7 +242,6 @@ impl Party {
                 // Track damage before/after for metrics
                 let prev_shield = target.current_shield.max(0.0);
                 let prev_hull = target.current_hull.max(0.0);
-                let _was_alive = target.is_alive;
 
                 // Apply damage (using local variables to avoid borrow issues)
                 apply_damage_fast(weapon_power, target, rng);
@@ -243,12 +257,12 @@ impl Party {
 
                 // Check rapid fire
                 if use_rapid_fire {
-                    if let Some(rf_map) = self.rapid_fire_map.get(&attacker_type) {
+                    if let Some(rf_map) = rapid_fire_against {
                         if let Some(&rf_value) = rf_map.get(&target_type) {
                             // Calculate rapid fire probability
                             // Chance to shoot again = 1 - (1 / rapid_fire_value)
                             // e.g., rapid fire 5 = 80% chance
-                            let continue_probability = 1.0 - (1.0 / rf_value as f32);
+                            let continue_probability = 1.0 - (1.0 / f32::from(rf_value));
 
                             // Use pre-generated random number
                             let rf_check = if rng_idx < random_rf_checks.len() {
@@ -272,6 +286,20 @@ impl Party {
                 break;
             }
         }
+    }
+
+    /// Wipe the side out without a shot being fired.
+    ///
+    /// The one thing v13's instant calculation has to do to the battle, and the
+    /// only reason it is this small: emptying the losing party leaves the round
+    /// loop's own condition false, so the loop does not run, `rounds` stays 0
+    /// and the result — outcome, losses, remaining, per-slot breakdown, and
+    /// everything the simulator derives from them — is assembled by exactly the
+    /// code that assembles a fought battle's. A short-circuit that built its
+    /// own result would be a second place for the shape of a result to be
+    /// decided, and the two would drift.
+    pub fn annihilate(&mut self) {
+        self.entities.clear();
     }
 
     pub fn regenerate_shields(&mut self) {
@@ -387,13 +415,16 @@ fn apply_damage_fast(weapon_power: u32, target: &mut Entity, rng: &mut impl Rng)
 
 /// Main combat simulation
 pub struct Combat {
-    entity_db: HashMap<EntityType, EntityStats>,
+    /// Borrowed from the process-wide table rather than owned — `Combat` only
+    /// ever reads it, and a `Simulator` is cloned into every rayon worker.
+    entity_db: &'static HashMap<EntityType, EntityStats>,
 }
 
 impl Combat {
+    #[must_use]
     pub fn new() -> Self {
         Self {
-            entity_db: combat_types::entities::load_entity_stats(),
+            entity_db: combat_types::entities::entity_stats(),
         }
     }
 
@@ -405,13 +436,66 @@ impl Combat {
         collect_compositions: bool,
         rng: &mut impl Rng,
     ) -> SingleCombatResult {
+        self.resolve(
+            attacker_data,
+            defender_data,
+            use_rapid_fire,
+            collect_compositions,
+            InstantCalculation::Applied,
+            rng,
+        )
+    }
+
+    /// The same battle with v13's instant calculation left off, fought round by
+    /// round however lopsided it is.
+    ///
+    /// The short-circuit is only allowed to be an optimisation, and a claim
+    /// like that is worth exactly what tests it: `instant_calculation.rs` runs
+    /// a battle down both paths and compares the two results field for field.
+    /// Nothing in the engine calls this — [`Combat::simulate_single`] is the
+    /// entry point, and `Simulator` goes through that — but the equivalence
+    /// cannot be asserted from outside the crate without it.
+    pub fn simulate_single_through_the_rounds(
+        &self,
+        attacker_data: &PartyData,
+        defender_data: &PartyData,
+        use_rapid_fire: bool,
+        collect_compositions: bool,
+        rng: &mut impl Rng,
+    ) -> SingleCombatResult {
+        self.resolve(
+            attacker_data,
+            defender_data,
+            use_rapid_fire,
+            collect_compositions,
+            InstantCalculation::Skipped,
+            rng,
+        )
+    }
+
+    fn resolve(
+        &self,
+        attacker_data: &PartyData,
+        defender_data: &PartyData,
+        use_rapid_fire: bool,
+        collect_compositions: bool,
+        instant: InstantCalculation,
+        rng: &mut impl Rng,
+    ) -> SingleCombatResult {
         // Precompute stats
-        let attacker_stats = StatsCache::new(&self.entity_db, &attacker_data.technology);
-        let defender_stats = StatsCache::new(&self.entity_db, &defender_data.technology);
+        let attacker_stats = StatsCache::new(self.entity_db, attacker_data);
+        let defender_stats = StatsCache::new(self.entity_db, defender_data);
 
         // Create parties
-        let mut attackers = Party::new(attacker_data, &self.entity_db, &attacker_stats);
-        let mut defenders = Party::new(defender_data, &self.entity_db, &defender_stats);
+        let mut attackers = Party::new(attacker_data, self.entity_db, &attacker_stats);
+        let mut defenders = Party::new(defender_data, self.entity_db, &defender_stats);
+
+        // v13's instant calculation, after the parties are built and before a
+        // shot is fired: the rule is about effective attack power, and the
+        // units are where the effective figures already are. See
+        // `crate::instant` for what it decides and, more to the point, for the
+        // battles it declines to decide.
+        instant.apply(&mut attackers, &mut defenders);
 
         let mut round = 0u8;
         let mut round_details: Vec<RoundDetails> = Vec::new();
@@ -534,6 +618,11 @@ impl Combat {
     }
 
     /// Simulate combat with explicit slots (A1/A2, D1/D2), returning per-slot results
+    // Long, and legitimately flagged: this is the round loop with slot
+    // bookkeeping threaded through it. Splitting it is real work with real
+    // risk to combat accuracy, so it is allowed here rather than done badly
+    // as a side effect of adopting a linter.
+    #[allow(clippy::too_many_lines)]
     pub fn simulate_single_with_slots(
         &self,
         attacker_slots: &[(String, PartyData)],
@@ -557,7 +646,7 @@ impl Combat {
 
         // Helper to extend party from a slot
         let extend_party = |party: &mut Party, slot_index: usize, data: &PartyData| {
-            let stats_cache = StatsCache::new(&self.entity_db, &data.technology);
+            let stats_cache = StatsCache::new(self.entity_db, data);
             let slot_id = (slot_index + 1) as u8;
             let mut original: FleetComposition = HashMap::new();
             for (&entity_type, &count) in &data.entities {
@@ -596,6 +685,15 @@ impl Combat {
             let original = extend_party(&mut defenders, idx, data);
             defender_original_per_slot.insert((idx + 1) as u8, original);
         }
+
+        // v13's instant calculation applies here too, and on the same figures.
+        // Combined attack power is a property of a *side*, and slots are only
+        // how one side's fleet is reported afterwards — an attacker who splits
+        // a fleet across A1 and A2 has not changed what it is worth, so a rule
+        // that read the slots separately would answer differently for the same
+        // ships. The parties below are already the whole side merged, which is
+        // exactly what the rule wants to see.
+        InstantCalculation::Applied.apply(&mut attackers, &mut defenders);
 
         // Run the same round loop with metrics
         let mut round = 0u8;
