@@ -207,6 +207,12 @@ impl Party {
 
             let attacker_type = entity.entity_type;
             let weapon_power = entity.weapon_power;
+            // Hoisted out of the shot loop below. `attacker_type` is fixed for
+            // this entity, so the outer lookup returns the same table on every
+            // rapid-fire shot — and with rapid fire a single Deathstar can take
+            // over a thousand shots in one round, each of which was re-hashing
+            // the same key.
+            let rapid_fire_against = self.rapid_fire_map.get(&attacker_type);
 
             // Shoot at least once
             loop {
@@ -244,7 +250,7 @@ impl Party {
 
                 // Check rapid fire
                 if use_rapid_fire {
-                    if let Some(rf_map) = self.rapid_fire_map.get(&attacker_type) {
+                    if let Some(rf_map) = rapid_fire_against {
                         if let Some(&rf_value) = rf_map.get(&target_type) {
                             // Calculate rapid fire probability
                             // Chance to shoot again = 1 - (1 / rapid_fire_value)
