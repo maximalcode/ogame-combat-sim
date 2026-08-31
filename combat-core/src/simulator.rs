@@ -47,7 +47,9 @@ impl Simulator {
         debris_settings: DebrisSettings,
         collect_compositions: bool,
     ) -> SimulationResult {
-        let mut rng = SmallRng::from_os_rng();
+        // Thread-local seed rather than an OS entropy call per battle; see
+        // `simulate_once`.
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
         let single = self.combat.simulate_single_with_slots(
             attacker_slots,
             defender_slots,
@@ -115,8 +117,12 @@ impl Simulator {
         debris_settings: DebrisSettings,
         collect_compositions: bool,
     ) -> SimulationResult {
-        // Use SmallRng for 3x faster RNG (non-cryptographic but sufficient for simulations)
-        let mut rng = SmallRng::from_os_rng();
+        // `SmallRng` because nothing about a battle needs cryptographic
+        // randomness. Seeded from the thread-local generator rather than
+        // `from_os_rng`, which asks the OS for entropy on *every* battle — a
+        // per-simulation cost that a ten-thousand-battle run pays ten thousand
+        // times for no benefit, since each battle is independent either way.
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
         let result = self.combat.simulate_single(
             attacker,
             defender,
@@ -230,14 +236,6 @@ impl Simulator {
             && request.attacker_slots.is_none()
             && request.defender_slots.is_none();
 
-        // For weak computers: limit parallelism to avoid overwhelming the system
-        // Use chunk-based parallelism for better cache locality
-        let chunk_size = if request.simulations < 10 {
-            1
-        } else {
-            (request.simulations / num_cpus::get() as u32).max(1)
-        };
-
         // Store original fleets for precision-preserving upscaling
         let original_attacker = request.attacker.entities.clone();
         let original_defender = request.defender.entities.clone();
@@ -339,7 +337,6 @@ impl Simulator {
         // Run simulations in parallel with controlled chunk size
         let simulation_results: Vec<SimulationResult> = (0..request.simulations)
             .into_par_iter()
-            .with_max_len(chunk_size as usize)
             .map(|_| {
                 let collect = request.enable_round_compositions.unwrap_or(false);
                 let result = if let (Some(a_o_arc), Some(d_o_arc)) = (&a_slots_orig, &d_slots_orig)
