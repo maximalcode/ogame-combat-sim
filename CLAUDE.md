@@ -13,8 +13,11 @@ a clap binary over the same library.
 **On versions.** The old repo called this "OGame v7" everywhere. That label was
 stale but the code mostly is not: combat resolution — rounds, rapid fire, the
 bounce rule, shield regen, the explosion roll, `+10%`-per-level tech scaling,
-the whole ship stat table — is unchanged from v7 through the current v13. What
-is genuinely missing is v13's instant-calc short-circuit, tracked in the issues.
+the whole ship stat table — is unchanged from v7 through the current v13. v13's
+own change to the combat entry path is modelled: there is no probe-only
+auto-loss and there never was one here, and the instant-calculation
+short-circuit lives in `combat-core/src/instant.rs` — narrower than the
+changelog states it, deliberately, see the bullet below.
 Everything else that fed *stat modifiers* in has since been modelled: player
 classes (v7), alliance classes (v8) and lifeform research (v9) — see
 `Technology::effective_levels` and `combat-types/src/lifeforms.rs` — and
@@ -39,6 +42,7 @@ itself was carried over intact — it was never contaminated.
 | `combat-types/src/names.rs` | `ENTITY_INFO`, `resolve()`, `name_of()` — names and aliases, hand-written, kept in sync by test |
 | `combat-types/src/combat_report.rs` | `CombatReport`, debris, moon chance, recycler maths |
 | `combat-core/src/combat.rs` | One battle: rounds, shots, rapid fire, explosions. `MAX_ROUNDS = 6` |
+| `combat-core/src/instant.rs` | v13's instant calculation: combined attack power, and when a battle may be decided without rounds |
 | `combat-core/src/simulator.rs` | `Simulator::simulate_multiple` — runs N battles in parallel via rayon |
 | `combat-core/src/scaling.rs` | Downscaling above `DOWNSCALE_THRESHOLD` (10M ships) |
 | `combat-core/src/economics.rs` | Debris, loot, plunder |
@@ -170,6 +174,41 @@ cargo fmt --check \
   General who researched 10 is reported as 12. Showing the researched figure
   beside a battle resolved at the higher one reads as a bug, and there is
   nowhere in the report to show both.
+- **The instant calculation fires on less than the changelog says, and that is
+  the feature.** v13 resolves a battle without rounds when one side has more
+  than 10,000 times the other's combined attack power. `combat-core/src/
+  instant.rs` implements that ratio — one definition of attack power for both
+  sides, every unit's *effective* weapon damage summed, read off the `Entity`
+  values the round loop shoots with so technology, class levels and lifeform
+  percentages are all in it, and **defences count towards a defender's**, they
+  shoot. But the ratio alone contradicts this engine's own rounds: at Weapons
+  9, 250 Light Fighters are worth 23,750 attack power against a Large Shield
+  Dome's 1 — 2.4 times over the 10,000 threshold — and still cannot scratch
+  it. That is `tests/common/mod.rs`, the shared fixture, and a short-circuit
+  on the ratio alone would report the dome destroyed. So four further
+  conditions, each read off `apply_damage_fast` and the round loop rather than
+  invented, have to hold as well: the loser's shots must bounce off
+  the winner entirely, the winner's must register on everything the loser has,
+  the winner's firepower must clear the loser's total hitpoints by the same
+  10,000× margin — the changelog's own number, reused rather than a second
+  constant invented for it — and the winner must fire enough *shots* to have
+  aimed at everything the loser brought, `MAX_ROUNDS` per armed unit against the
+  loser's unit count, at that same margin. **Damage and shots are two budgets
+  and a wipe-out spends both**: `Party::shoot_at` gives an armed unit one shot
+  per round unless rapid fire buys more, so 189 Deathstars at Weapons 255 clear
+  a damage margin against 1,000 Espionage Probes and then fire 1,134 shots at
+  1,000 randomly chosen targets — which with `use_rapid_fire` off is a draw with
+  dozens of probes flying home, not the wipe the damage condition alone
+  reported. Anything else is simulated, which is slower and
+  right. **The short-circuit is only ever allowed to be an optimisation**, so
+  `Combat::simulate_single_through_the_rounds` exists purely so
+  `tests/instant_calculation.rs` can fight the same battle both ways and compare
+  — including over fleets nobody chose. It resolves by emptying the losing
+  party and letting the ordinary code build the result, which is why `rounds` is
+  an honest 0, `round_details` is an empty list, and debris, loot, profit and
+  the per-slot breakdown all come out in the usual shape. Slot mode takes the
+  same rule, because attack power is a property of a side and a slot is only how
+  that side is reported.
 - **Two OGame mechanics are known and deliberately not implemented, for two
   different reasons.** Do not collapse them into one. The Light Fighter's
   chance to destroy a Deathstar outright (a General perk) has no number worth
