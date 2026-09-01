@@ -409,6 +409,28 @@ mod tests {
         calls: Arc<Mutex<u32>>,
     }
 
+    struct ReleaseGuard {
+        barrier: Arc<Barrier>,
+        released: bool,
+    }
+
+    impl ReleaseGuard {
+        fn new(barrier: Arc<Barrier>) -> Self {
+            Self {
+                barrier,
+                released: false,
+            }
+        }
+    }
+
+    impl Drop for ReleaseGuard {
+        fn drop(&mut self) {
+            if !self.released {
+                self.barrier.wait();
+            }
+        }
+    }
+
     impl SimulationRunner for BarrierRunner {
         fn run(&self, _request: CombatRequest) -> SimulationResponse {
             let call = {
@@ -508,7 +530,10 @@ mod tests {
         tokio::task::spawn_blocking(move || entered.wait())
             .await
             .expect("entered barrier");
+        let mut release_guard = ReleaseGuard::new(release.clone());
         first.abort();
+        let cancellation = first.await.expect_err("aborted request must be cancelled");
+        assert!(cancellation.is_cancelled());
 
         let second = service.clone().oneshot(request()).await.expect("response");
         assert_eq!(second.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -522,6 +547,7 @@ mod tests {
         tokio::task::spawn_blocking(move || release.wait())
             .await
             .expect("release barrier");
+        release_guard.released = true;
         while state.permits.available_permits() == 0 {
             tokio::task::yield_now().await;
         }
