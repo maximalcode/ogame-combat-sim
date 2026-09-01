@@ -217,10 +217,11 @@ threads. `Simulator::new()` explicitly builds the process-wide Rayon pool with
 override this pool. To inspect the runtime constraint and total process thread
 count, run a container with `--cpus=1`, exercise `POST /api/simulate`, and then
 run `docker exec <container> sh -c 'grep -E "Cpus_allowed_list|Threads:" /proc/1/status'`
-(the cgroup quota is also visible in `/sys/fs/cgroup/cpu.max`). In the release
-smoke environment this reported a one-CPU quota, `Cpus_allowed_list: 0-7`, and
-`Threads: 15` after a request. The 15 threads include Tokio and runtime support;
-the explicit Rayon pool contributes one worker under that quota. Raising
+(the cgroup quota is also visible in `/sys/fs/cgroup/cpu.max`). In a release
+smoke container started with `--cpus=1`, this reported `cpu.max: 100000 100000`,
+`Cpus_allowed_list: 0-7`, and `Threads: 3` after a request. Those three threads
+include the binary and runtime support; the explicit Rayon pool contributes one
+worker under that quota. Raising
 `MAX_CONCURRENT_SIMULATIONS` adds one owned API worker per admitted computation,
 so it increases total threads independently of the Rayon pool.
 

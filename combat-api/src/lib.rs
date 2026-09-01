@@ -338,7 +338,19 @@ pub async fn run(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>>
     tokio::pin!(signal);
 
     tokio::select! {
-        result = &mut server => result?,
+        result = &mut server => {
+            result?;
+            if !state.is_accepting()
+                && timeout(config.shutdown_grace, state.wait_for_admitted_work())
+                    .await
+                    .is_err()
+            {
+                warn!(
+                    grace_seconds = config.shutdown_grace.as_secs(),
+                    "shutdown grace expired; interrupted work is being stopped with the process"
+                );
+            }
+        },
         () = &mut signal => {
             let drain = async {
                 let result = (&mut server).await;
