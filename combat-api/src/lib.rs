@@ -116,8 +116,8 @@ impl ServerConfig {
     /// Read process configuration from the documented environment variables.
     pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            port: parse_or_default("PORT", 3000)?,
-            max_simulations: parse_or_default("MAX_SIMULATIONS", DEFAULT_MAX_SIMULATIONS)?,
+            port: parse_legacy_or_default("PORT", 3000),
+            max_simulations: parse_legacy_or_default("MAX_SIMULATIONS", DEFAULT_MAX_SIMULATIONS),
             max_concurrent_simulations: parse_positive_or_default(
                 "MAX_CONCURRENT_SIMULATIONS",
                 DEFAULT_MAX_CONCURRENT_SIMULATIONS,
@@ -128,6 +128,16 @@ impl ServerConfig {
             )?),
         })
     }
+}
+
+fn parse_legacy_or_default<T>(name: &str, default: T) -> T
+where
+    T: std::str::FromStr,
+{
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
 }
 
 fn parse_or_default<T>(name: &str, default: T) -> Result<T, String>
@@ -240,7 +250,12 @@ async fn simulate(
             "simulations must be at least 1".to_owned(),
         ));
     }
-
+    if state.max_simulations == 0 {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "simulation capacity unavailable: MAX_SIMULATIONS is zero".to_owned(),
+        ));
+    }
     if !state.is_accepting() {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
@@ -255,9 +270,8 @@ async fn simulate(
     })?;
     let workers = state.workers.clone();
     workers.admitted();
-    let cap = state.max_simulations.max(1);
-    if request.simulations > cap {
-        request.simulations = cap;
+    if request.simulations > state.max_simulations {
+        request.simulations = state.max_simulations;
     }
     request.enable_downscaling = None;
     info!(
@@ -381,7 +395,7 @@ mod tests {
     use std::collections::HashMap;
     use std::future::Future;
     use std::pin::Pin;
-    use std::sync::{Barrier, Mutex};
+    use std::sync::{Arc, Barrier, Mutex};
     use std::task::{Context, Poll};
     use tokio::sync::oneshot;
     use tower::ServiceExt;
@@ -407,6 +421,20 @@ mod tests {
         entered: Arc<Barrier>,
         release: Arc<Barrier>,
         calls: Arc<Mutex<u32>>,
+    }
+
+    struct CountingRunner {
+        calls: Arc<Mutex<u32>>,
+    }
+
+    impl SimulationRunner for CountingRunner {
+        fn run(&self, _request: CombatRequest) -> SimulationResponse {
+            *self.calls.lock().expect("calls lock") += 1;
+            SimulationResponse {
+                results: CombatResults::new(1),
+                report: test_report(),
+            }
+        }
     }
 
     struct ReleaseGuard {
@@ -506,6 +534,26 @@ mod tests {
                 r#"{"attacker":{"technology":{},"entities":{"204":1}},"defender":{"technology":{},"entities":{"401":1}},"use_rapid_fire":true,"simulations":1}"#,
             ))
             .expect("request")
+    }
+
+    #[tokio::test]
+    async fn zero_simulation_cap_returns_unavailable_without_running_work() {
+        let calls = Arc::new(Mutex::new(0));
+        let runner = Arc::new(CountingRunner {
+            calls: calls.clone(),
+        });
+        let config = ServerConfig {
+            port: 0,
+            max_simulations: 0,
+            max_concurrent_simulations: 1,
+            shutdown_grace: Duration::from_secs(1),
+        };
+        let service = app(AppState::with_runner(config, runner));
+
+        let response = service.oneshot(request()).await.expect("response");
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(*calls.lock().expect("calls lock"), 0);
     }
 
     #[tokio::test]

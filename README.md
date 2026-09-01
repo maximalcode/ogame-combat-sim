@@ -162,7 +162,11 @@ back up.
 | `/api/simulate` | POST | Run a battle, get results and a report |
 
 `PORT` (default 3000) and `MAX_SIMULATIONS` (default 1000) are read from the
-environment. The cap is server protection only — the library has no limit.
+environment. Invalid, empty, out-of-range, and non-Unicode values retain the
+legacy fallback to those defaults. A configured `MAX_SIMULATIONS=0` makes
+simulation work unavailable and requests return HTTP 503; the server never
+executes above that configured cap. The cap is server protection only — the
+library has no limit.
 
 ## Release containers
 
