@@ -164,6 +164,53 @@ back up.
 `PORT` (default 3000) and `MAX_SIMULATIONS` (default 1000) are read from the
 environment. The cap is server protection only — the library has no limit.
 
+## Release containers
+
+The API and frontend have separate multi-stage release images. Both runtime
+stages run as an unprivileged user, and the frontend bundle is built without an
+API address compiled into it. The frontend's static server proxies same-origin
+`/api` requests to `API_UPSTREAM` when it starts.
+
+Run the local pair with host-facing ports bound to loopback:
+
+```bash
+docker compose -f compose.yaml build
+docker compose -f compose.yaml up
+curl -fsS http://127.0.0.1:3000/
+open http://127.0.0.1:8080/
+```
+
+The API image can be built directly from the repository root. Buildx selects
+the requested Linux architecture and tags the image locally:
+
+```bash
+docker buildx build --load --platform linux/arm64 \
+  -f combat-api/Dockerfile -t ogame-combat-api:local-arm64 .
+docker buildx build --load --platform linux/amd64 \
+  -f combat-api/Dockerfile -t ogame-combat-api:local-amd64 .
+docker buildx build --load --platform linux/arm64 \
+  -f frontend/Dockerfile -t ogame-combat-frontend:local-arm64 frontend
+docker buildx build --load --platform linux/amd64 \
+  -f frontend/Dockerfile -t ogame-combat-frontend:local-amd64 frontend
+```
+
+On an arm64 Docker Desktop host, the arm64 build and run are native. The
+amd64 commands may use emulation; record their build result separately from
+native runtime performance. Inspect the selected architecture and immutable
+image digest with `docker image inspect --format '{{.Id}} {{.Architecture}}'`
+and `docker image inspect --format '{{json .RepoDigests}}'`.
+
+The API accepts `MAX_CONCURRENT_SIMULATIONS` as a positive integer (default 1).
+When all permits are in use, simulation requests return 503 immediately while
+`GET /` remains available. The CPU-bound computation runs on an owned worker
+thread, and its permit is released only after that computation returns, even if
+the HTTP client disconnects. `SHUTDOWN_GRACE_SECONDS` (default 10) is the
+finite SIGTERM drain budget. SIGTERM stops new admission and lets admitted
+requests finish within the budget; work that exceeds it is interrupted when
+the process exits because blocking CPU work cannot be cancelled by aborting an
+HTTP future. A normal `docker compose up` reuses container state; use explicit
+container/image removal commands when a destructive reset is intended.
+
 ## Using it as a library
 
 `combat-core` is usable on its own, with no HTTP involved:
