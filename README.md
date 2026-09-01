@@ -211,6 +211,19 @@ the process exits because blocking CPU work cannot be cancelled by aborting an
 HTTP future. A normal `docker compose up` reuses container state; use explicit
 container/image removal commands when a destructive reset is intended.
 
+The admission count covers API simulation workers, not the engine's Rayon
+threads. `Simulator::new()` explicitly builds the process-wide Rayon pool with
+`max(1, floor(num_cpus::get() * 3 / 4))`; `RAYON_NUM_THREADS` therefore does not
+override this pool. To inspect the runtime constraint and total process thread
+count, run a container with `--cpus=1`, exercise `POST /api/simulate`, and then
+run `docker exec <container> sh -c 'grep -E "Cpus_allowed_list|Threads:" /proc/1/status'`
+(the cgroup quota is also visible in `/sys/fs/cgroup/cpu.max`). In the release
+smoke environment this reported a one-CPU quota, `Cpus_allowed_list: 0-7`, and
+`Threads: 15` after a request. The 15 threads include Tokio and runtime support;
+the explicit Rayon pool contributes one worker under that quota. Raising
+`MAX_CONCURRENT_SIMULATIONS` adds one owned API worker per admitted computation,
+so it increases total threads independently of the Rayon pool.
+
 ## Using it as a library
 
 `combat-core` is usable on its own, with no HTTP involved:

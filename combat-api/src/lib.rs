@@ -17,13 +17,13 @@ use std::{
     env,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::Duration,
 };
 use tokio::{
-    sync::{Semaphore, oneshot, watch},
+    sync::{Notify, Semaphore, oneshot, watch},
     time::timeout,
 };
 use tower_http::cors::{Any, CorsLayer};
@@ -55,6 +55,49 @@ impl SimulationRunner for EngineRunner {
         let results = Simulator::new().simulate_multiple(&request);
         let report = ReportBuilder::new().build_summary_report(&request, &results);
         SimulationResponse { results, report }
+    }
+}
+
+struct WorkerTracker {
+    active: AtomicUsize,
+    completed: Notify,
+}
+
+impl WorkerTracker {
+    fn new() -> Self {
+        Self {
+            active: AtomicUsize::new(0),
+            completed: Notify::new(),
+        }
+    }
+
+    fn admitted(&self) {
+        self.active.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn returned(&self) {
+        self.active.fetch_sub(1, Ordering::AcqRel);
+        self.completed.notify_waiters();
+    }
+
+    async fn wait_for_all(&self) {
+        loop {
+            let notified = self.completed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.active.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+struct WorkerGuard(Arc<WorkerTracker>);
+
+impl Drop for WorkerGuard {
+    fn drop(&mut self) {
+        self.0.returned();
     }
 }
 
@@ -121,6 +164,7 @@ pub struct AppState {
     max_simulations: u32,
     permits: Arc<Semaphore>,
     accepting: Arc<AtomicBool>,
+    workers: Arc<WorkerTracker>,
     runner: Arc<dyn SimulationRunner>,
 }
 
@@ -136,6 +180,7 @@ impl AppState {
             max_simulations: config.max_simulations,
             permits: Arc::new(Semaphore::new(config.max_concurrent_simulations)),
             accepting: Arc::new(AtomicBool::new(true)),
+            workers: Arc::new(WorkerTracker::new()),
             runner,
         }
     }
@@ -150,6 +195,11 @@ impl AppState {
     #[must_use]
     pub fn is_accepting(&self) -> bool {
         self.accepting.load(Ordering::Acquire)
+    }
+
+    /// Wait for every admitted simulation worker to return.
+    pub async fn wait_for_admitted_work(&self) {
+        self.workers.wait_for_all().await;
     }
 }
 
@@ -203,7 +253,8 @@ async fn simulate(
             "simulation capacity exhausted".to_owned(),
         )
     })?;
-
+    let workers = state.workers.clone();
+    workers.admitted();
     let cap = state.max_simulations.max(1);
     if request.simulations > cap {
         request.simulations = cap;
@@ -215,10 +266,12 @@ async fn simulate(
     );
 
     let runner = state.runner.clone();
+    let worker_for_thread = workers.clone();
     let (sender, receiver) = oneshot::channel();
     thread::Builder::new()
         .name("combat-api-simulation".to_owned())
         .spawn(move || {
+            let _worker_guard = WorkerGuard(worker_for_thread);
             let response = runner.run(request);
             // The permit is deliberately dropped only after run returns. If
             // the HTTP receiver was dropped, this still protects capacity.
@@ -226,6 +279,7 @@ async fn simulate(
             let _ = sender.send(response);
         })
         .map_err(|error| {
+            workers.returned();
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("could not start simulation worker: {error}"),
@@ -280,13 +334,18 @@ pub async fn run(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>>
         .with_graceful_shutdown(shutdown)
         .into_future();
     tokio::pin!(server);
-    let signal = wait_for_shutdown(state, shutdown_sender);
+    let signal = wait_for_shutdown(state.clone(), shutdown_sender);
     tokio::pin!(signal);
 
     tokio::select! {
         result = &mut server => result?,
         () = &mut signal => {
-            if let Ok(result) = timeout(config.shutdown_grace, &mut server).await {
+            let drain = async {
+                let result = (&mut server).await;
+                state.wait_for_admitted_work().await;
+                result
+            };
+            if let Ok(result) = timeout(config.shutdown_grace, drain).await {
                 result?;
             } else {
                 warn!(
@@ -308,8 +367,29 @@ mod tests {
         FleetSnapshot, Participant, PlanetResources, ResourceCost, Technology,
     };
     use std::collections::HashMap;
+    use std::future::Future;
+    use std::pin::Pin;
     use std::sync::{Barrier, Mutex};
+    use std::task::{Context, Poll};
+    use tokio::sync::oneshot;
     use tower::ServiceExt;
+
+    struct ObservePending<F> {
+        future: Pin<Box<F>>,
+        observed: Option<oneshot::Sender<bool>>,
+    }
+
+    impl<F: Future> Future for ObservePending<F> {
+        type Output = F::Output;
+
+        fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+            let result = self.future.as_mut().poll(context);
+            if let Some(sender) = self.observed.take() {
+                let _ = sender.send(result.is_pending());
+            }
+            result
+        }
+    }
 
     struct BarrierRunner {
         entered: Arc<Barrier>,
@@ -437,5 +517,46 @@ mod tests {
         // request admissible without any timing based sleep.
         let third = service.oneshot(request()).await.expect("response");
         assert_eq!(third.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn shutdown_drain_waits_for_disconnected_worker() {
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let runner = Arc::new(BarrierRunner {
+            entered: entered.clone(),
+            release: release.clone(),
+            calls: Arc::new(Mutex::new(0)),
+        });
+        let config = ServerConfig {
+            port: 0,
+            max_simulations: 1,
+            max_concurrent_simulations: 1,
+            shutdown_grace: Duration::from_secs(1),
+        };
+        let state = AppState::with_runner(config, runner);
+        let service = app(state.clone());
+        let first = tokio::spawn(service.oneshot(request()));
+        tokio::task::spawn_blocking(move || entered.wait())
+            .await
+            .expect("entered barrier");
+        first.abort();
+        state.stop_admission();
+
+        let (observed_sender, observed_receiver) = oneshot::channel();
+        let drain_state = state.clone();
+        let drain = tokio::spawn(ObservePending {
+            future: Box::pin(async move { drain_state.wait_for_admitted_work().await }),
+            observed: Some(observed_sender),
+        });
+        let pending = observed_receiver.await.expect("drain was polled");
+        if !pending {
+            release.wait();
+            let _ = drain.await;
+            panic!("shutdown drain returned before the admitted worker ended");
+        }
+
+        release.wait();
+        drain.await.expect("drain task");
     }
 }
