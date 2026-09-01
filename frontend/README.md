@@ -58,6 +58,21 @@ to `.env.local` to point at a different API:
 VITE_API_BASE_URL=https://my-api.example.com
 ```
 
+## Release container
+
+`Dockerfile` builds the bundle in a clean Node image and serves it with the
+small runtime proxy in `server.mjs`. Leave `VITE_API_BASE_URL` unset so the
+browser uses same-origin `/api`; set `API_UPSTREAM` when starting the runtime
+container (the default is `http://api:3000`). `PORT` defaults to 8080. The
+runtime uses the non-root `node` user.
+
+From the repository root:
+
+```bash
+docker buildx build --load --platform linux/arm64 \
+  -f frontend/Dockerfile -t ogame-combat-frontend:local-arm64 frontend
+```
+
 ## Scripts
 
 | Script | What it does |

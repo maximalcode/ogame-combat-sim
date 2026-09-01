@@ -7,8 +7,8 @@ needs fixing.
 ## What this is
 
 An OGame fleet-combat simulator. `combat-core` is the engine, `combat-types`
-the shared data model, `combat-api` a small stateless axum server, `combat-cli`
-a clap binary over the same library.
+the shared data model, `combat-api` a small axum server with bounded admission
+and shutdown state, and `combat-cli` a clap binary over the same library.
 
 **On versions.** The old repo called this "OGame v7" everywhere. That label was
 stale but the code mostly is not: combat resolution — rounds, rapid fire, the
@@ -48,7 +48,8 @@ itself was carried over intact — it was never contaminated.
 | `combat-core/src/economics.rs` | Debris, loot, plunder |
 | `combat-core/src/report_builder.rs` | `ReportBuilder::build_summary_report` |
 | `combat-fixtures/src/lib.rs` | The regression corpus fixture format: `Fixture`, validation, `Evaluation`, `run_fixture`, `ignored_request_fields` |
-| `combat-api/src/main.rs` | The whole server: two routes, no state |
+| `combat-api/src/lib.rs` | HTTP routes, shared admission state, owned simulation workers, and finite shutdown draining |
+| `combat-api/src/main.rs` | Thin Tokio binary entry point: logging, environment configuration, and `combat_api::run` |
 | `combat-cli/src/cli.rs` | clap definitions, `build_request`, `parse_request_json`, `validate` |
 | `combat-cli/src/args.rs` | `parse_fleet` / `parse_tech` / `parse_resources` — the shorthand parsers |
 | `combat-cli/src/render.rs` | Human-readable output. Returns `String`, never prints |

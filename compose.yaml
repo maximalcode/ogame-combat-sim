@@ -1,0 +1,24 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: combat-api/Dockerfile
+    environment:
+      PORT: "3000"
+      MAX_SIMULATIONS: "1000"
+      MAX_CONCURRENT_SIMULATIONS: "1"
+      SHUTDOWN_GRACE_SECONDS: "10"
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8080"
+      API_UPSTREAM: http://api:3000
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:8080:8080"
