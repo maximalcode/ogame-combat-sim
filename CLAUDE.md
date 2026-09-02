@@ -219,9 +219,11 @@ cargo fmt --check \
   Engineer officer is the other case — not an unsourced number but nowhere to
   put it. Its effect is on the post-battle defence rebuild roll and this engine
   has no rebuild step at all, so `has_engineer` waits rather than being turned
-  into a stat bonus it is not; see the inert-fields bullet above. The 70% /
-  85% figures quoted at `combat-types/src/lib.rs:195` are folklore until
-  checked — issue #41 confirms them against a live source and adds the phase.
+  into a stat bonus it is not; see the inert-fields bullet above. The 70% base
+  rebuild chance and 85% chance with an Engineer are confirmed by the official
+  OGame forum's defence tutorial and team clarification for defence-to-debris
+  universes. Issue #41 adds the missing phase; rebuilt defences and debris are
+  mutually exclusive outcomes.
 - **Debris rules come from two places and one wins.** A request can set
   `debris_percentage` at the top level *and* describe debris inside
   `universe_settings`. `CombatRequest::debris_settings` settles it:
