@@ -240,7 +240,7 @@ fn espionage_probe() -> EntityStats {
         rapid_fire_from: rf_map!(
             215 => 5, 213 => 5, 211 => 5, 209 => 5, 208 => 5,
             207 => 5, 206 => 5, 205 => 5, 204 => 5, 203 => 5,
-            214 => 1250, 218 => 5, 219 => 5, 202 => 5
+            214 => 250, 218 => 5, 219 => 5, 202 => 5
         ),
         rapid_fire_against: HashMap::new(),
         cost_metal: 0,
@@ -281,7 +281,7 @@ fn solar_satellite() -> EntityStats {
         rapid_fire_from: rf_map!(
             215 => 5, 213 => 5, 211 => 5, 209 => 5, 208 => 5,
             207 => 5, 206 => 5, 205 => 5, 204 => 5, 203 => 5,
-            214 => 1250, 218 => 5, 219 => 5, 202 => 5
+            214 => 250, 218 => 5, 219 => 5, 202 => 5
         ),
         rapid_fire_against: HashMap::new(),
         cost_metal: 0,
@@ -361,7 +361,7 @@ fn crawler() -> EntityStats {
         rapid_fire_from: rf_map!(
             215 => 5, 213 => 5, 211 => 5, 209 => 5, 208 => 5,
             207 => 5, 206 => 5, 205 => 5, 204 => 5, 203 => 5,
-            214 => 1250, 202 => 5, 219 => 5, 218 => 5
+            214 => 250, 202 => 5, 219 => 5, 218 => 5
         ),
         rapid_fire_against: HashMap::new(),
         cost_metal: 2000,
@@ -624,5 +624,36 @@ mod tests {
             reaper.rapid_fire_against,
             HashMap::from([(210, 5), (212, 5), (217, 5), (207, 7), (211, 4), (213, 3),])
         );
+    }
+
+    #[test]
+    fn rapid_fire_tables_are_reciprocal() {
+        let stats = entity_stats();
+
+        for (&attacker, attacker_stats) in stats {
+            for (&target, &multiplier) in &attacker_stats.rapid_fire_against {
+                let target_stats = stats
+                    .get(&target)
+                    .unwrap_or_else(|| panic!("rapid-fire target {target} is not in entity stats"));
+                assert_eq!(
+                    target_stats.rapid_fire_from.get(&attacker),
+                    Some(&multiplier),
+                    "rapid-fire relationship {attacker} -> {target} is not reciprocal"
+                );
+            }
+        }
+
+        for (&target, target_stats) in stats {
+            for (&attacker, &multiplier) in &target_stats.rapid_fire_from {
+                let attacker_stats = stats.get(&attacker).unwrap_or_else(|| {
+                    panic!("rapid-fire source {attacker} is not in entity stats")
+                });
+                assert_eq!(
+                    attacker_stats.rapid_fire_against.get(&target),
+                    Some(&multiplier),
+                    "rapid-fire relationship {attacker} -> {target} is not reciprocal"
+                );
+            }
+        }
     }
 }
