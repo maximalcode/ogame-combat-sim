@@ -23,13 +23,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Pinned to a commit, not to '@v1'. 'v1' is a moving tag that maxi-quality
-  # repoints at its main, so this repo was silently taking whatever landed
-  # there — including, right now, 7 commits past the v1.0.5 release. A SHA
-  # makes an upgrade a diff someone approves. Repin to the next release tag
-  # once one is cut past 5c9571c9.
+  # The immutable release pin agrees with .claude/quality-runtime.json and
+  # includes upstream's fixed internal action references. Upgrades change both.
   quality:
-    uses: maximalcode/maxi-quality/.github/workflows/quality.yml@5c9571c9fc72d86ded7f14fa8c6121603909344f # v1 @ 2026-08-14
+    uses: maximalcode/maxi-quality/.github/workflows/quality.yml@9d29bc6b9a498d2f863746158b4b4d891fd2f9a0 # v1.2.0
     with:
       # Passed rather than inherited, even though it is upstream's default
       # today. The `rust` job below installs its own toolchain — separate jobs,
