@@ -396,7 +396,7 @@ fn smallest_pack_the_rule_speaks_for(
 /// *effective* weapon power and Weapons 255 multiplies the stat table by 26.5 —
 /// which is where a side's damage budget and its shot budget come apart. Rapid
 /// fire is switched by seed rather than pinned on, because a Deathstar with
-/// rapid fire 1250 against probes fires thousands of shots a round and without
+/// rapid fire 250 against probes fires hundreds of shots a round and without
 /// it fires one, and `use_rapid_fire` is a request field with a CLI flag behind
 /// it. And one seed in forty is a boundary probe rather than a roll: it bisects
 /// for the smallest fleet the rule will still speak for and compares *there*,

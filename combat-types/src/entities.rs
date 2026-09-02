@@ -319,9 +319,9 @@ fn deathstar() -> EntityStats {
         rapid_fire_from: HashMap::new(),
         rapid_fire_against: rf_map!(
             202 => 250, 203 => 250, 204 => 200, 205 => 100, 206 => 33,
-            207 => 30, 208 => 250, 209 => 250, 210 => 1250, 212 => 1250,
+            207 => 30, 208 => 250, 209 => 250, 210 => 250, 212 => 250,
             211 => 25, 213 => 5, 401 => 200, 402 => 200, 403 => 100,
-            404 => 50, 405 => 100, 215 => 15, 217 => 1250, 218 => 10, 219 => 30
+            404 => 50, 405 => 100, 215 => 15, 217 => 250, 218 => 10, 219 => 30
         ),
         cost_metal: 5_000_000,
         cost_crystal: 4_000_000,
@@ -578,5 +578,51 @@ fn interplanetary_missile() -> EntityStats {
         cargo_capacity: 0,
         base_speed: 0,
         fuel_consumption: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::entity_stats;
+    use std::collections::HashMap;
+
+    #[test]
+    fn deathstar_rapid_fire_table_matches_ogame_v13() {
+        let expected = HashMap::from([
+            (202, 250),
+            (203, 250),
+            (204, 200),
+            (205, 100),
+            (206, 33),
+            (207, 30),
+            (208, 250),
+            (209, 250),
+            (210, 250),
+            (211, 25),
+            (212, 250),
+            (213, 5),
+            (215, 15),
+            (217, 250),
+            (218, 10),
+            (219, 30),
+            (401, 200),
+            (402, 200),
+            (403, 100),
+            (404, 50),
+            (405, 100),
+        ]);
+
+        assert_eq!(entity_stats()[&214].rapid_fire_against, expected);
+    }
+
+    #[test]
+    fn reaper_rapid_fire_table_remains_unchanged() {
+        let reaper = &entity_stats()[&218];
+
+        assert_eq!(reaper.rapid_fire_from, HashMap::from([(405, 2), (214, 10)]));
+        assert_eq!(
+            reaper.rapid_fire_against,
+            HashMap::from([(210, 5), (212, 5), (217, 5), (207, 7), (211, 4), (213, 3),])
+        );
     }
 }
