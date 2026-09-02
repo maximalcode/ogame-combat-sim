@@ -117,6 +117,65 @@ mod tests {
             assert_eq!(a.defender_shield_damage, b.defender_shield_damage);
         }
     }
+
+    #[test]
+    fn deathstar_fires_fewer_continuation_shots_at_probes_than_legacy_table() {
+        let attacker = PartyData {
+            entities: HashMap::from([(214, 1)]),
+            ..Default::default()
+        };
+        let defender = PartyData {
+            entities: HashMap::from([(210, 100)]),
+            ..Default::default()
+        };
+
+        let corrected = Combat::new();
+
+        let mut legacy_db = combat_types::entities::load_entity_stats();
+        legacy_db
+            .get_mut(&214)
+            .expect("Deathstar is present")
+            .rapid_fire_against
+            .insert(210, 1250);
+        let legacy_db: &'static HashMap<EntityType, EntityStats> = Box::leak(Box::new(legacy_db));
+        let legacy = Combat {
+            entity_db: legacy_db,
+        };
+
+        let mut corrected_rng = SmallRng::seed_from_u64(18);
+        let corrected_result = corrected.simulate_single_through_the_rounds(
+            &attacker,
+            &defender,
+            true,
+            false,
+            &mut corrected_rng,
+        );
+        let mut legacy_rng = SmallRng::seed_from_u64(18);
+        let legacy_result = legacy.simulate_single_through_the_rounds(
+            &attacker,
+            &defender,
+            true,
+            false,
+            &mut legacy_rng,
+        );
+
+        let shots = |result: &SingleCombatResult| {
+            result
+                .round_details
+                .as_ref()
+                .expect("round details are enabled")
+                .iter()
+                .map(|round| round.attacker_shots.unwrap_or_default())
+                .sum::<u64>()
+        };
+
+        assert_eq!(corrected_result.outcome, CombatOutcome::AttackersWin);
+        assert_eq!(legacy_result.outcome, CombatOutcome::AttackersWin);
+        assert!(
+            shots(&corrected_result) < shots(&legacy_result),
+            "corrected x250 should produce fewer Deathstar shots than legacy x1250"
+        );
+    }
 }
 
 /// Combat party (attackers or defenders)

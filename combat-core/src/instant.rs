@@ -123,8 +123,8 @@
 //! Fought with `use_rapid_fire` off, that battle is a draw on every seed tried,
 //! with as many as 89 probes coming home on full hull; the ratio-plus-damage
 //! rule reported a clean wipe. Rapid fire had been hiding it, because a
-//! Deathstar has rapid fire 1250 against probes and with the flag on really
-//! does fire thousands of shots a round — but `use_rapid_fire` is a request
+//! Deathstar has rapid fire 250 against probes and with the flag on really
+//! does fire hundreds of shots a round — but `use_rapid_fire` is a request
 //! field with a CLI flag behind it, so "the flag is usually on" is not an
 //! argument the engine gets to make.
 //!
