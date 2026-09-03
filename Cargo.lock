@@ -255,9 +255,11 @@ dependencies = [
  "clap",
  "combat-core",
  "combat-fixtures",
+ "combat-ogame-api",
  "combat-types",
  "serde_json",
  "serde_path_to_error",
+ "tokio",
 ]
 
 [[package]]
@@ -293,6 +295,7 @@ dependencies = [
  "quick-xml",
  "reqwest",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

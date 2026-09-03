@@ -54,6 +54,7 @@ itself was carried over intact — it was never contaminated.
 | `combat-cli/src/args.rs` | `parse_fleet` / `parse_tech` / `parse_resources` — the shorthand parsers |
 | `combat-cli/src/render.rs` | Human-readable output. Returns `String`, never prints |
 | `combat-ogame-api/src/lib.rs` | Public OGame XML client and offline parsers; disk cache, per-host rate limit and `serverData.xml` lifeform table source |
+| `combat-ogame-api/src/reports/` | On-demand community-proxy report client and offline candidate parser; no disk cache, shared rolling quota, allowlist sanitization |
 
 ## Running a simulation
 
@@ -317,13 +318,17 @@ cargo fmt --check \
   deliberately does **not** depend on `combat-core`: `run_fixture` takes a
   closure that produces `CombatResults`, so validating a fixture never installs
   the process-wide rayon pool.
-- **A combat report cannot be imported automatically, and it is not for want of
-  code.** The `cr-en-1-<hash>` string a player can copy is an id, not data, and
-  resolving it goes through `api/v1/combat/report?api_key=…` with a developer
-  key Gameforge issues on application and requires be kept private.
-  `combat-ogame-api` touches only the public XML endpoints. So the corpus is
-  filled by hand, which is why the authoring tooling exists and why issue #17 is
-  labelled `ready-for-human`.
+- **Report import produces a candidate, not a ready-to-run request.** The
+  community proxy resolves deliberately supplied combat and espionage IDs
+  without our own developer key. `combat-cli report` requires transfer consent;
+  IDs enter through stdin or a local file. Fetching never reaches the engine.
+  Candidates retain unknowns as null and observed rounds separately from inputs.
+  In sampled responses `BaseStatsBooster` can include technology contributions;
+  its values are preserved as reported, **not** copied into simulator lifeform
+  percentages. Review modifier semantics and universe settings before building a
+  `CombatRequest`. Private retrieval is not publication consent: real captures
+  stay out of the repository, and the committed parser examples are synthetic.
+  See [report import](docs/report-import.md) for privacy and live-check usage.
 - **Edition 2024 reserves `gen`.** That is why this uses rand 0.9
   (`random`, `random_range`, `from_os_rng`) rather than rand 0.8's `gen`.
 - **The clippy config has two halves.** Everything above the

@@ -1,8 +1,9 @@
 //! The command line surface, and the translation from it into a
 //! [`CombatRequest`].
 //!
-//! Three subcommands: `sim` runs a battle, `entities` prints the stat table,
-//! and `fixture` writes and checks regression-corpus fixtures.
+//! `sim` runs a battle, `entities` prints the stat table, `fixture` writes and
+//! checks regression-corpus fixtures, and `report` imports a private report ID
+//! into a sanitized review candidate through the community proxy.
 //!
 //! `sim` takes a battle either as flags or as a JSON file. The JSON path is a
 //! straight `serde_json::from_str::<CombatRequest>` — the same body
@@ -38,11 +39,24 @@ pub enum Command {
     Sim(Box<SimArgs>),
     /// List every entity the simulator knows: id, name, aliases and stats.
     Entities,
+    /// Import one privately supplied report ID into a sanitized review candidate.
+    Report(ReportArgs),
     /// Write and check regression-corpus fixtures from real combat reports.
     Fixture {
         #[command(subcommand)]
         action: FixtureCommand,
     },
+}
+
+#[derive(Debug, Args)]
+pub struct ReportArgs {
+    /// Read the report ID from this local file; otherwise read one ID from stdin.
+    #[arg(long, value_name = "PATH")]
+    pub file: Option<std::path::PathBuf>,
+    /// Allow sending the ID to the third-party caching proxy ogapi.faw-kes.de.
+    /// Raw responses are not saved. Independent processes share its quota.
+    #[arg(long)]
+    pub allow_proxy_transfer: bool,
 }
 
 /// What to do with a fixture.
@@ -364,7 +378,9 @@ mod tests {
         let cli = Cli::try_parse_from(argv).map_err(|e| e.to_string())?;
         match cli.command {
             Command::Sim(args) => build_request(&args),
-            Command::Entities | Command::Fixture { .. } => panic!("test argv should be a sim"),
+            Command::Entities | Command::Fixture { .. } | Command::Report(_) => {
+                panic!("test argv should be a sim")
+            }
         }
     }
 
