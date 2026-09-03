@@ -17,6 +17,7 @@ mod args;
 mod cli;
 mod fixture;
 mod render;
+mod report;
 
 use std::process::ExitCode;
 
@@ -26,10 +27,26 @@ use combat_core::{ReportBuilder, Simulator};
 use cli::{Cli, Command, FixtureCommand, SimArgs};
 
 fn main() -> ExitCode {
-    // `Cli::parse` exits on its own for `--help` and for malformed argv; what
-    // reaches `run` is a syntactically valid command that may still be
-    // semantically wrong (an unknown ship, an empty battle).
-    let cli = Cli::parse();
+    // What reaches `run` is syntactically valid but may still be semantically
+    // wrong (an unknown ship, an empty battle or an invalid report ID).
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            // clap normally echoes bad arguments. A misplaced report capability
+            // must not be copied into stderr by that otherwise helpful behavior.
+            if std::env::args_os()
+                .nth(1)
+                .is_some_and(|arg| arg == "report")
+                && error.use_stderr()
+            {
+                eprintln!(
+                    "error: invalid report arguments; use report --help and supply IDs through stdin or --file"
+                );
+                return ExitCode::FAILURE;
+            }
+            error.exit();
+        }
+    };
 
     match run(cli.command) {
         Ok(output) => {
@@ -47,6 +64,7 @@ fn run(command: Command) -> Result<String, String> {
     match command {
         Command::Sim(args) => simulate(&args),
         Command::Entities => Ok(render::render_entities()),
+        Command::Report(args) => report::import(&args),
         Command::Fixture { action } => match action {
             FixtureCommand::Template => Ok(combat_fixtures::TEMPLATE.to_owned()),
             FixtureCommand::Check(args) => fixture::check(&args.paths),

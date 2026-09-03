@@ -6,17 +6,19 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Typed client for OGame's public per-universe XML metadata API"
+description = "OGame public XML metadata and on-demand community-proxy report imports"
 
 [dependencies]
 combat-types = { path = "../combat-types" }
 quick-xml = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "sync", "time"] }
 
 [dev-dependencies]
 approx = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

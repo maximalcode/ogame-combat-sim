@@ -259,6 +259,16 @@ so anything you can curl you can also feed straight to the library. That
 snippet is compiled and run by `combat-core/tests/readme_example.rs`, so it
 cannot quietly stop working.
 
+## Import a report
+
+Import one privately supplied combat or espionage report ID through the
+community proxy with `combat-cli report --file /private/report-id.txt
+--allow-proxy-transfer`. The result is a sanitized review candidate, not an
+automatically completed simulation request. Missing data and uncertain modifier
+semantics are flagged. IDs and raw responses are not saved by the importer.
+See [report import](docs/report-import.md) for transfer/privacy details and the
+opt-in live check. No private developer API key is required.
+
 ## Entity IDs
 
 Fleets are keyed by OGame's own entity IDs over JSON and in the library. The CLI
@@ -284,8 +294,8 @@ unit's stats.
 | `combat-types` | The data model: requests, results, reports, ship and defence stats |
 | `combat-core` | The engine: rounds, rapid fire, explosions, debris, loot, downscaling |
 | `combat-api` | A small stateless HTTP server over the engine |
-| `combat-cli` | The command-line interface: `sim` and `entities` |
-| `combat-ogame-api` | Typed access to OGame's public per-universe XML metadata |
+| `combat-cli` | Simulation, entities, corpus fixtures and report import |
+| `combat-ogame-api` | Public per-universe XML metadata and on-demand community-proxy report import |
 
 A web UI lives under `frontend/` (see its README): fleet entry with multi-slot
 ACS, technology levels and planet resources. Rendering the results is still in

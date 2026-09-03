@@ -1,9 +1,11 @@
-//! Typed access to `OGame`'s public, per-universe XML metadata endpoints.
+//! Typed access to `OGame` public XML metadata and owner-supplied reports.
 //!
 //! Fetching, caching and parsing live here rather than in `combat-core`, so a
 //! simulation remains fully offline. Parsing is exposed separately and is
 //! tested against checked-in XML fixtures; callers that already have XML do
 //! not need an HTTP client at all.
+//! [`reports`] provides a separate non-caching community-proxy client and an
+//! offline parser for sanitized, incomplete simulation-input candidates.
 
 mod client;
 mod endpoint;
@@ -11,6 +13,7 @@ mod error;
 mod lifeforms;
 mod models;
 mod parse;
+pub mod reports;
 
 pub use client::OGameClient;
 pub use endpoint::{Endpoint, HighscoreCategory, HighscoreType, Universe};
