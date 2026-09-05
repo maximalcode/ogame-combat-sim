@@ -407,7 +407,7 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         "universe",
         serde_json::to_value(&input.universe).unwrap_or(Value::Null),
     );
-    let assessment_limitations = assessment_limitations(candidate, &input.universe);
+    let assessment_limitations = assessment_limitations(candidate, &input.universe, &request);
     CompletionResult::Verified {
         input: Box::new(VerifiedBattleInput {
             request,
@@ -1165,9 +1165,18 @@ fn validate_universe(
 fn assessment_limitations(
     candidate: &Candidate,
     universe: &PinnedUniverse,
+    request: &CombatRequest,
 ) -> Vec<AssessmentLimitation> {
     let mut limitations = Vec::new();
+    let defender_has_defences = request
+        .defender
+        .entities
+        .keys()
+        .any(|entity| (400..500).contains(entity));
     for field in ["debris_fleet", "debris_defence", "debris_deuterium"] {
+        if field == "debris_defence" && !defender_has_defences {
+            continue;
+        }
         let missing = match field {
             "debris_fleet" => universe.settings.debris_fleet.is_none(),
             "debris_defence" => universe.settings.debris_defence.is_none(),

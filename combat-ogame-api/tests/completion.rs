@@ -222,6 +222,34 @@ fn missing_debris_settings_keep_execution_verified_with_metric_limitations() {
     assert!(universe_evidence["debris_deuterium"].is_null());
 }
 
+#[test]
+fn missing_defence_debris_is_ignored_when_completed_defender_has_no_defences() {
+    let mut pinned = universe();
+    pinned.settings.debris_fleet = None;
+    pinned.settings.debris_defence = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location != "universe.settings.debris_defence")
+    );
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location == "universe.settings.debris_fleet")
+    );
+}
+
 #[tokio::test]
 async fn current_resolver_uses_the_public_clients_existing_cache_path() {
     let cache = std::env::temp_dir().join(format!(
