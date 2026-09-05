@@ -315,6 +315,9 @@ pub enum CompletionResult {
 
 /// Complete one combat candidate entirely offline.
 #[must_use]
+// This workflow deliberately keeps validation, evidence reconciliation, and
+// request construction together so a verified request cannot bypass one of
+// the fail-closed completion checks.
 #[allow(clippy::too_many_lines)]
 pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
     let candidate = &input.candidate;
@@ -394,7 +397,6 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         return CompletionResult::Incomplete { issues };
     };
     let rapid_fire = resolve_rapid_fire(
-        candidate,
         &input.universe,
         &input.evidence,
         &attacker.party,
@@ -426,7 +428,7 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         "universe",
         serde_json::to_value(&input.universe).unwrap_or(Value::Null),
     );
-    let assessment_limitations = assessment_limitations(candidate, &input.universe, &request);
+    let assessment_limitations = assessment_limitations(&input.universe, &request);
     CompletionResult::Verified {
         input: Box::new(VerifiedBattleInput {
             request,
@@ -1181,9 +1183,11 @@ fn validate_universe(
     }
 }
 
+// These inputs stay separate because the resolver must compare report facts,
+// pinned metadata, and supplied battle-time evidence before returning a
+// request value or recording it in the ledger.
 #[allow(clippy::too_many_arguments)]
 fn resolve_rapid_fire(
-    candidate: &Candidate,
     universe: &PinnedUniverse,
     completion_evidence: &CompletionEvidence,
     attacker: &PartyData,
@@ -1201,15 +1205,16 @@ fn resolve_rapid_fire(
                 "universe.settings.rapid_fire.historical",
                 Value::from(value),
             );
+            return value;
         }
     }
 
-    if current_snapshot_predates_report(candidate, universe)
+    // An acknowledged current snapshot is still only a current snapshot. Its
+    // source timestamp does not establish that the setting remained unchanged
+    // through the report event, in either timestamp ordering.
+    if acknowledged_current_snapshot_is_not_historical(universe)
         && rapid_fire_can_affect(attacker, defender)
     {
-        if let Some(value) = supplied {
-            return value;
-        }
         issue(
             issues,
             FieldIssueKind::Missing,
@@ -1219,16 +1224,6 @@ fn resolve_rapid_fire(
         );
     }
     pinned_rapid_fire
-}
-
-fn current_snapshot_predates_report(candidate: &Candidate, universe: &PinnedUniverse) -> bool {
-    universe.current == Some(true)
-        && universe.acknowledged_current == Some(true)
-        && candidate
-            .provenance
-            .event_timestamp
-            .zip(universe.source_timestamp)
-            .is_none_or(|(event, source)| event < source)
 }
 
 fn rapid_fire_can_affect(attacker: &PartyData, defender: &PartyData) -> bool {
@@ -1252,7 +1247,6 @@ fn rapid_fire_from_side_can_affect(
 }
 
 fn assessment_limitations(
-    candidate: &Candidate,
     universe: &PinnedUniverse,
     request: &CombatRequest,
 ) -> Vec<AssessmentLimitation> {
@@ -1286,7 +1280,7 @@ fn assessment_limitations(
             }
         }
     }
-    if !current_snapshot_predates_report(candidate, universe) {
+    if !acknowledged_current_snapshot_is_not_historical(universe) {
         return limitations;
     }
 
@@ -1313,6 +1307,10 @@ fn assessment_limitations(
         });
     }
     limitations
+}
+
+fn acknowledged_current_snapshot_is_not_historical(universe: &PinnedUniverse) -> bool {
+    universe.current == Some(true) && universe.acknowledged_current == Some(true)
 }
 
 /// Return whether an unknown debris setting can affect a modeled output for

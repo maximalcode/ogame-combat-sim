@@ -450,6 +450,61 @@ fn explicit_historical_rapid_fire_completes_relevant_current_snapshot_separately
 }
 
 #[test]
+fn explicit_historical_rapid_fire_controls_execution_at_every_snapshot_timestamp() {
+    for (label, attacker, defender) in [("relevant", 206, 204), ("irrelevant", 204, 401)] {
+        for event_timestamp in [1_700_000_099, 1_700_000_100, 1_700_000_101] {
+            let mut pinned = universe();
+            pinned.current = Some(true);
+            pinned.acknowledged_current = Some(true);
+            let mut completion_evidence = evidence();
+            completion_evidence.historical_rapid_fire = Some(false);
+            let mut candidate = candidate(Some(attacker), Some(defender));
+            candidate.provenance.event_timestamp = Some(event_timestamp);
+            let result = complete_candidate(&CompletionInput {
+                candidate,
+                evidence: completion_evidence,
+                universe: pinned,
+            });
+            let CompletionResult::Verified { input } = result else {
+                panic!("{label} composition should accept explicit historical evidence");
+            };
+            assert!(
+                !input.request.use_rapid_fire,
+                "{label} composition at {event_timestamp}"
+            );
+            assert_eq!(
+                input.evidence.fields["universe.settings.rapid_fire.historical"].value,
+                serde_json::json!(false),
+                "{label} composition at {event_timestamp}"
+            );
+        }
+    }
+}
+
+#[test]
+fn missing_historical_rapid_fire_blocks_relevant_composition_at_every_snapshot_timestamp() {
+    for event_timestamp in [1_700_000_099, 1_700_000_100, 1_700_000_101] {
+        let mut pinned = universe();
+        pinned.current = Some(true);
+        pinned.acknowledged_current = Some(true);
+        let mut candidate = candidate(Some(206), Some(204));
+        candidate.provenance.event_timestamp = Some(event_timestamp);
+        let result = complete_candidate(&CompletionInput {
+            candidate,
+            evidence: evidence(),
+            universe: pinned,
+        });
+        let CompletionResult::Incomplete { issues } = result else {
+            panic!("missing historical evidence must block execution at {event_timestamp}");
+        };
+        assert!(issues.iter().any(|issue| {
+            issue.location == "universe.settings.rapid_fire"
+                && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+        }));
+    }
+}
+
+#[test]
 fn historical_rapid_fire_evidence_conflicting_with_pinned_value_is_rejected() {
     let mut completion_evidence = evidence();
     completion_evidence.historical_rapid_fire = Some(false);
