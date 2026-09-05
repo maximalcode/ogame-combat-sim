@@ -69,7 +69,9 @@ To complete a single combat candidate offline, pass a structured artifact to
 `combat-cli report complete --file`. The artifact supplies explicit participant
 evidence and a fully pinned universe. Completion reports every missing or
 unsupported field together; it never fills absent technology, class, lifeform,
-composition, or temporal status with a default. A verified result keeps the
+composition, or temporal status with a default. In particular, participant
+evidence must include a `lifeform` object even when it is `{}`: an omitted or
+`null` value leaves the lifeform state unknown. A verified result keeps the
 battle provenance and universe snapshot provenance in a separate evidence
 ledger, while the observed outcome stays outside the `CombatRequest`.
 

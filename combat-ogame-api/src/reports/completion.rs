@@ -95,9 +95,11 @@ pub struct ParticipantEvidence {
     pub player_class: Option<PlayerClass>,
     #[serde(default)]
     pub alliance_class: Option<AllianceClass>,
-    /// Percentages are simulator units: `50.0` means +50%.
+    /// Percentages are simulator units: `50.0` means +50%. `None` means the
+    /// report did not establish the lifeform state; `Some(empty)` is an
+    /// explicit confirmation that no lifeform modifiers apply.
     #[serde(default)]
-    pub lifeform: BTreeMap<u16, LifeformBonus>,
+    pub lifeform: Option<BTreeMap<u16, LifeformBonus>>,
 }
 
 /// Evidence used to complete the candidate.  The map is keyed by the stable
@@ -454,7 +456,8 @@ fn resolve_participant(
         issues,
         ledger,
     );
-    if participant.reported_unit_stats.is_some() && supplied.is_none() {
+    let lifeform_evidence = supplied.and_then(|e| e.lifeform.as_ref());
+    if lifeform_evidence.is_none() {
         issue(
             issues,
             review_kind(review_required, &location, "lifeform"),
@@ -472,8 +475,12 @@ fn resolve_participant(
         issues,
         ledger,
     );
-    let lifeform = supplied.map_or_else(LifeformBonuses::default, |e| {
-        for (&entity, bonus) in &e.lifeform {
+    let lifeform = lifeform_evidence.map_or_else(LifeformBonuses::default, |evidence| {
+        ledger.supplied(
+            format!("{location}.lifeform"),
+            serde_json::to_value(evidence).unwrap_or(Value::Null),
+        );
+        for (&entity, bonus) in evidence {
             if !entity_stats().contains_key(&entity) {
                 issue(
                     issues,
@@ -488,21 +495,13 @@ fn resolve_participant(
                 serde_json::to_value(bonus).unwrap_or(Value::Null),
             );
         }
-        e.lifeform
+        evidence
             .iter()
             .map(|(&entity, &bonus)| (entity, bonus))
             .collect()
     });
 
-    if let Some(stats) = participant.reported_unit_stats.as_ref() {
-        ledger.report(format!("{location}.reported_unit_stats"), stats.clone());
-    }
-    if let Some(boosters) = participant.reported_base_stats_booster.as_ref() {
-        ledger.report(
-            format!("{location}.reported_base_stats_booster"),
-            boosters.clone(),
-        );
-    }
+    record_report_evidence(participant, &location, ledger);
 
     if let (Some(composition), Some(technology)) = (
         participant
@@ -525,6 +524,18 @@ fn resolve_participant(
 
     ResolvedParticipant {
         party: party.unwrap_or_default(),
+    }
+}
+
+fn record_report_evidence(participant: &Participant, location: &str, ledger: &mut EvidenceLedger) {
+    if let Some(stats) = participant.reported_unit_stats.as_ref() {
+        ledger.report(format!("{location}.reported_unit_stats"), stats.clone());
+    }
+    if let Some(boosters) = participant.reported_base_stats_booster.as_ref() {
+        ledger.report(
+            format!("{location}.reported_base_stats_booster"),
+            boosters.clone(),
+        );
     }
 }
 
@@ -617,10 +628,11 @@ fn resolve_technology(
         }
         TechnologyBasis::AlreadyEffective => values,
     };
-    // The proxy's percentage-divided-by-ten basis is provisional. Only a
-    // candidate that explicitly declares the same basis can be compared with
-    // the supplied evidence; otherwise doing so would invent a contradiction
-    // between researched and already-effective representations.
+    // The proxy's percentage-divided-by-ten basis is provisional. When the
+    // candidate does name a basis, convert both representations to the same
+    // effective levels before comparing them. This keeps a known researched
+    // value from bypassing a conflict merely because supplied evidence used
+    // the already-effective representation (or vice versa).
     let candidate_basis = match candidate_technology.basis.as_str() {
         "researched" => Some(TechnologyBasis::Researched),
         "already_effective" => Some(TechnologyBasis::AlreadyEffective),
@@ -636,38 +648,72 @@ fn resolve_technology(
             None
         }
     };
-    if candidate_basis == Some(explicit.basis) {
-        for (field, reported, completed) in [
-            ("weapon", candidate_technology.weapon, effective.weapon),
-            ("shield", candidate_technology.shield, effective.shield),
-            ("armour", candidate_technology.armour, effective.armour),
+    if let Some(candidate_basis) = candidate_basis {
+        let candidate_values = Technology {
+            weapon: candidate_technology.weapon.unwrap_or_default(),
+            shield: candidate_technology.shield.unwrap_or_default(),
+            armour: candidate_technology.armour.unwrap_or_default(),
+            ..Technology::default()
+        };
+        let candidate_effective = match candidate_basis {
+            TechnologyBasis::AlreadyEffective => candidate_values,
+            TechnologyBasis::Researched => {
+                let (Some(player_class), Some(alliance_class)) = (player_class, alliance_class)
+                else {
+                    if player_class.is_none() {
+                        issue(
+                            issues,
+                            review_kind(review_required, &participant.slot, "player_class"),
+                            format!("{}.player_class", participant.slot),
+                            "known researched report technology cannot be reconciled without a confirmed player class",
+                            "supply the player class or explicitly confirm no player class",
+                        );
+                    }
+                    if alliance_class.is_none() {
+                        issue(
+                            issues,
+                            review_kind(review_required, &participant.slot, "alliance_class"),
+                            format!("{}.alliance_class", participant.slot),
+                            "known researched report technology cannot be reconciled without a confirmed alliance class",
+                            "supply the alliance class or explicitly confirm no alliance class",
+                        );
+                    }
+                    return None;
+                };
+                let bonuses = PlayerBonuses {
+                    player_class,
+                    alliance_class,
+                    ..PlayerBonuses::default()
+                };
+                candidate_values.effective_levels(Some(&bonuses))
+            }
+        };
+        for (field, reported, candidate_completed, supplied_completed) in [
+            (
+                "weapon",
+                candidate_technology.weapon,
+                candidate_effective.weapon,
+                effective.weapon,
+            ),
+            (
+                "shield",
+                candidate_technology.shield,
+                candidate_effective.shield,
+                effective.shield,
+            ),
+            (
+                "armour",
+                candidate_technology.armour,
+                candidate_effective.armour,
+                effective.armour,
+            ),
         ] {
-            if let Some(candidate_value) = reported {
-                if candidate_value != completed_for_basis(completed, explicit.basis, field, values)
-                {
-                    contradiction(issues, &format!("{}.{}", participant.slot, field));
-                }
+            if reported.is_some() && candidate_completed != supplied_completed {
+                contradiction(issues, &format!("{}.{}", participant.slot, field));
             }
         }
     }
     Some(effective)
-}
-
-fn completed_for_basis(
-    effective: u8,
-    basis: TechnologyBasis,
-    field: &str,
-    researched: Technology,
-) -> u8 {
-    match basis {
-        TechnologyBasis::AlreadyEffective => effective,
-        TechnologyBasis::Researched => match field {
-            "weapon" => researched.weapon,
-            "shield" => researched.shield,
-            "armour" => researched.armour,
-            _ => effective,
-        },
-    }
 }
 
 fn resolve_class<T: Copy + PartialEq + Serialize>(

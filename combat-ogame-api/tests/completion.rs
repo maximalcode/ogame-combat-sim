@@ -83,6 +83,7 @@ fn evidence() -> CompletionEvidence {
                     technology: Some(technology.clone()),
                     player_class: Some(PlayerClass::General),
                     alliance_class: Some(AllianceClass::Warrior),
+                    lifeform: Some(BTreeMap::new()),
                     ..Default::default()
                 },
             ),
@@ -92,6 +93,7 @@ fn evidence() -> CompletionEvidence {
                     technology: Some(technology),
                     player_class: Some(PlayerClass::General),
                     alliance_class: Some(AllianceClass::Warrior),
+                    lifeform: Some(BTreeMap::new()),
                     ..Default::default()
                 },
             ),
@@ -218,6 +220,8 @@ fn already_effective_technology_is_used_directly_and_lifeform_units_are_explicit
         .get_mut("A1")
         .unwrap()
         .lifeform
+        .as_mut()
+        .unwrap()
         .insert(
             204,
             combat_types::LifeformBonus {
@@ -227,6 +231,12 @@ fn already_effective_technology_is_used_directly_and_lifeform_units_are_explicit
                 ..Default::default()
             },
         );
+    candidate.attackers[0].reported_unit_stats = Some(serde_json::json!({
+        // Light Fighter base stats are weapon 50, shield 10, armour 4000.
+        // Effective technology 13 and +50% lifeform research therefore yield
+        // 140 weapon, 28 shield and 1120 combat hull.
+        "204": {"weapon": 140, "shield": 28, "armor": 1120}
+    }));
     let result = complete_candidate(&CompletionInput {
         candidate,
         evidence,
@@ -244,6 +254,179 @@ fn already_effective_technology_is_used_directly_and_lifeform_units_are_explicit
         input.evidence.fields["A1.reported_base_stats_booster"].source,
         EvidenceSource::Report
     );
+}
+
+#[test]
+fn omitted_lifeform_evidence_stays_unknown_even_when_other_evidence_exists() {
+    let mut value = serde_json::to_value(evidence()).unwrap();
+    let participants = value["participants"].as_object_mut().unwrap();
+    for participant in participants.values_mut() {
+        participant.as_object_mut().unwrap().remove("lifeform");
+    }
+    let evidence_without_lifeform: CompletionEvidence = serde_json::from_value(value).unwrap();
+
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence_without_lifeform,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("omitted lifeform evidence must not become an empty bonus map");
+    };
+    for slot in ["A1", "D1"] {
+        assert!(issues.iter().any(|issue| {
+            issue.location == format!("{slot}.lifeform")
+                && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unknown
+        }));
+    }
+
+    let mut null_value = serde_json::to_value(evidence()).unwrap();
+    for participant in null_value["participants"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+    {
+        participant
+            .as_object_mut()
+            .unwrap()
+            .insert("lifeform".to_owned(), serde_json::Value::Null);
+    }
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: serde_json::from_value(null_value).unwrap(),
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("null lifeform evidence must not become an empty bonus map");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "A1.lifeform"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unknown
+    }));
+}
+
+#[test]
+fn a_pinned_universe_from_another_report_is_rejected() {
+    let mut pinned = universe();
+    pinned.community = "de".to_owned();
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("a mismatched universe must not produce a runnable request");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.identity"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::WrongUniverse
+    }));
+}
+
+#[test]
+fn completing_a_private_observation_does_not_bypass_fixture_publication_consent() {
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: universe(),
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("the synthetic candidate should be complete");
+    };
+    let fixture = serde_json::json!({
+        "schema_version": 1,
+        "name": "private completion result",
+        "provenance": {
+            "observed_battle": true,
+            "source": "local report",
+            "universe": "en-1",
+            "approximate_date": "2023-11-14",
+            "game_version": "13.0.1",
+            "publication_consent": false
+        },
+        "request": input.request,
+        "observed": {
+            "outcome": "AttackersWin",
+            "attacker_losses": {},
+            "defender_losses": {},
+            "debris": {"metal": 0, "crystal": 0, "deuterium": 0}
+        },
+        "tolerance": {
+            "minimum_observed_outcome_rate": 0.0,
+            "losses": {"absolute": 0.0, "relative": 0.0},
+            "debris": {"absolute": 0.0, "relative": 0.0},
+            "justification": "synthetic consent boundary test"
+        }
+    });
+    let path = std::env::temp_dir().join(format!(
+        "completion-private-fixture-{}.json",
+        std::process::id()
+    ));
+    std::fs::write(&path, serde_json::to_vec(&fixture).unwrap()).unwrap();
+    let loaded = combat_fixtures::load_fixture(&path).expect("fixture should parse");
+    let _ = std::fs::remove_file(&path);
+    assert!(
+        loaded
+            .validation_errors()
+            .iter()
+            .any(|error| error
+                == "observed battles require provenance.publication_consent to be true")
+    );
+}
+
+#[test]
+fn explicitly_known_different_technology_bases_are_reconciled_and_conflicts_rejected() {
+    let mut already_effective_report = candidate(Some(204), Some(401));
+    already_effective_report.attackers[0].technology = TechnologyCandidate {
+        basis: "already_effective".to_owned(),
+        weapon: Some(1),
+        shield: Some(1),
+        armour: Some(1),
+    };
+    let mut researched_evidence = evidence();
+    researched_evidence
+        .participants
+        .get_mut("A1")
+        .unwrap()
+        .technology = Some(TechnologyEvidence {
+        basis: TechnologyBasis::Researched,
+        weapon: 10,
+        shield: 10,
+        armour: 10,
+    });
+    let result = complete_candidate(&CompletionInput {
+        candidate: already_effective_report,
+        evidence: researched_evidence,
+        universe: universe(),
+    });
+    assert!(matches!(result, CompletionResult::Incomplete { ref issues }
+        if issues.iter().any(|issue| issue.kind == combat_ogame_api::reports::FieldIssueKind::Contradictory)));
+
+    let mut researched_report = candidate(Some(204), Some(401));
+    researched_report.attackers[0].technology = TechnologyCandidate {
+        basis: "researched".to_owned(),
+        weapon: Some(100),
+        shield: Some(100),
+        armour: Some(100),
+    };
+    let mut already_effective_evidence = evidence();
+    already_effective_evidence
+        .participants
+        .get_mut("A1")
+        .unwrap()
+        .technology = Some(TechnologyEvidence {
+        basis: TechnologyBasis::AlreadyEffective,
+        weapon: 13,
+        shield: 13,
+        armour: 13,
+    });
+    let result = complete_candidate(&CompletionInput {
+        candidate: researched_report,
+        evidence: already_effective_evidence,
+        universe: universe(),
+    });
+    assert!(matches!(result, CompletionResult::Incomplete { ref issues }
+        if issues.iter().any(|issue| issue.kind == combat_ogame_api::reports::FieldIssueKind::Contradictory)));
 }
 
 #[test]
