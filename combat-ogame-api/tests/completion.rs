@@ -3,6 +3,10 @@ use combat_ogame_api::reports::{
     ParticipantEvidence, PinnedUniverse, PinnedUniverseSettings, Provenance, TechnologyBasis,
     TechnologyCandidate, TechnologyEvidence, complete_candidate,
 };
+use combat_ogame_api::{
+    OGameClient, Universe, parse_server_data,
+    reports::{pinned_universe_from_server_data, resolve_current_universe},
+};
 use combat_types::{AllianceClass, PlayerClass};
 use std::collections::BTreeMap;
 
@@ -99,6 +103,102 @@ fn evidence() -> CompletionEvidence {
             ),
         ]),
     }
+}
+
+#[test]
+fn public_server_metadata_resolves_to_a_current_pinned_universe() {
+    let server = parse_server_data(include_str!("fixtures/serverData.xml")).unwrap();
+    let resolved = pinned_universe_from_server_data("en", 123, &server).unwrap();
+
+    assert_eq!(resolved.community, "en");
+    assert_eq!(resolved.universe, 123);
+    assert_eq!(resolved.settings.galaxies, Some(9));
+    assert_eq!(resolved.settings.systems, Some(499));
+    assert_eq!(resolved.settings.fleet_speed, Some(2));
+    assert_eq!(resolved.settings.debris_fleet, Some(70));
+    assert_eq!(resolved.settings.debris_defence, Some(30));
+    assert_eq!(resolved.settings.debris_deuterium, Some(true));
+    assert_eq!(resolved.settings.deuterium_save_factor, Some(80));
+    assert_eq!(resolved.source, EvidenceSource::PublicMetadata);
+    assert_eq!(resolved.source_timestamp, Some(1_700_000_000));
+    assert_eq!(resolved.source_version.as_deref(), Some("13.0.0"));
+    assert_eq!(resolved.current, Some(true));
+    assert_eq!(resolved.acknowledged_current, Some(false));
+}
+
+#[test]
+fn public_server_metadata_rejects_a_mismatched_identity() {
+    let server = parse_server_data(include_str!("fixtures/serverData.xml")).unwrap();
+    let error = pinned_universe_from_server_data("de", 123, &server).unwrap_err();
+
+    assert!(error.to_string().contains("identity"));
+}
+
+#[test]
+fn public_server_metadata_rejects_non_integral_or_out_of_range_units() {
+    let mut server = parse_server_data(include_str!("fixtures/serverData.xml")).unwrap();
+    server.debris_factor = 0.705;
+    let error = pinned_universe_from_server_data("en", 123, &server).unwrap_err();
+
+    assert!(error.to_string().contains("debris_factor"));
+}
+
+#[test]
+fn public_server_metadata_rejects_missing_combat_setting_instead_of_defaulting_it() {
+    let xml = include_str!("fixtures/serverData.xml")
+        .replace("  <deuteriumInDebris>1</deuteriumInDebris>\n", "");
+    let server = parse_server_data(&xml).unwrap();
+    let error = pinned_universe_from_server_data("en", 123, &server).unwrap_err();
+
+    assert!(error.to_string().contains("deuterium_in_debris"));
+}
+
+#[tokio::test]
+async fn current_resolver_uses_the_public_clients_existing_cache_path() {
+    let cache = std::env::temp_dir().join(format!(
+        "combat-ogame-api-resolution-{}",
+        std::process::id()
+    ));
+    let directory = cache.join("s123-en");
+    std::fs::create_dir_all(&directory).unwrap();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let xml = include_str!("fixtures/serverData.xml").replace(
+        "timestamp=\"1700000000\"",
+        &format!("timestamp=\"{timestamp}\""),
+    );
+    std::fs::write(directory.join("serverData.xml"), xml).unwrap();
+
+    let mut report = candidate(Some(204), Some(401));
+    report.provenance.universe = 123;
+    let client = OGameClient::new(Universe::new("s123-en").unwrap(), &cache).unwrap();
+    let resolved = resolve_current_universe(&report, &client).await.unwrap();
+
+    assert_eq!(resolved.universe, 123);
+    assert_eq!(resolved.source, EvidenceSource::PublicMetadata);
+    let _ = std::fs::remove_dir_all(cache);
+}
+
+#[test]
+fn acknowledged_current_settings_keep_execution_verified_but_limit_historical_debris() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("acknowledged current settings should execute");
+    };
+
+    assert_eq!(input.assessment_limitations.len(), 1);
+    let limitation = &input.assessment_limitations[0];
+    assert_eq!(limitation.metric, "generated_debris");
+    assert!(!limitation.affects_execution);
 }
 
 #[test]

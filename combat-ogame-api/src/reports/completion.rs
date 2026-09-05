@@ -273,6 +273,21 @@ pub struct VerifiedBattleInput {
     pub request: CombatRequest,
     pub evidence: EvidenceLedger,
     pub observed: Option<Value>,
+    /// Output metrics whose historical basis is unavailable even though the
+    /// request can still execute with the acknowledged current snapshot.
+    #[serde(default)]
+    pub assessment_limitations: Vec<AssessmentLimitation>,
+}
+
+/// A structured downstream assessment limitation. Completion does not run a
+/// comparison engine, but it preserves whether an unresolved historical value
+/// blocks execution or only one output metric.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AssessmentLimitation {
+    pub metric: String,
+    pub location: String,
+    pub explanation: String,
+    pub affects_execution: bool,
 }
 
 /// Completion always has one of these two machine-readable outcomes.
@@ -381,11 +396,13 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         "universe",
         serde_json::to_value(&input.universe).unwrap_or(Value::Null),
     );
+    let assessment_limitations = assessment_limitations(candidate, &input.universe);
     CompletionResult::Verified {
         input: Box::new(VerifiedBattleInput {
             request,
             evidence,
             observed: candidate.observed.clone(),
+            assessment_limitations,
         }),
     }
 }
@@ -1134,6 +1151,29 @@ fn validate_universe(
             Value::from(version.clone()),
         );
     }
+}
+
+fn assessment_limitations(
+    candidate: &Candidate,
+    universe: &PinnedUniverse,
+) -> Vec<AssessmentLimitation> {
+    let current_snapshot_predates_report = universe.current == Some(true)
+        && universe.acknowledged_current == Some(true)
+        && candidate
+            .provenance
+            .event_timestamp
+            .zip(universe.source_timestamp)
+            .is_none_or(|(event, source)| event < source);
+    if !current_snapshot_predates_report {
+        return Vec::new();
+    }
+
+    vec![AssessmentLimitation {
+        metric: "generated_debris".to_owned(),
+        location: "universe.settings.debris_fleet".to_owned(),
+        explanation: "the acknowledged current universe snapshot is not historical proof for the report event; generated debris cannot be assessed against the battle-time debris rules".to_owned(),
+        affects_execution: false,
+    }]
 }
 
 fn player_class(value: u8) -> PlayerClass {
