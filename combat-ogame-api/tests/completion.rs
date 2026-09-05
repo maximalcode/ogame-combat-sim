@@ -103,6 +103,7 @@ fn evidence() -> CompletionEvidence {
                 },
             ),
         ]),
+        historical_rapid_fire: None,
     }
 }
 
@@ -400,15 +401,97 @@ fn acknowledged_current_settings_keep_execution_verified_but_limit_historical_de
 }
 
 #[test]
+fn acknowledged_current_settings_block_historical_rapid_fire_when_composition_can_use_it() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("current rapid-fire metadata must not prove an older battle's setting");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.rapid_fire"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+}
+
+#[test]
+fn explicit_historical_rapid_fire_completes_relevant_current_snapshot_separately() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    let mut completion_evidence = evidence();
+    completion_evidence.historical_rapid_fire = Some(false);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: completion_evidence,
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("explicit historical rapid-fire evidence should complete the battle");
+    };
+    assert!(!input.request.use_rapid_fire);
+    assert_eq!(
+        input.evidence.fields["universe"].value["settings"]["rapid_fire"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        input.evidence.fields["universe.settings.rapid_fire.historical"].source,
+        EvidenceSource::Supplied
+    );
+    assert_eq!(
+        input.evidence.fields["universe.settings.rapid_fire.historical"].value,
+        serde_json::json!(false)
+    );
+}
+
+#[test]
+fn historical_rapid_fire_evidence_conflicting_with_pinned_value_is_rejected() {
+    let mut completion_evidence = evidence();
+    completion_evidence.historical_rapid_fire = Some(false);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: completion_evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("conflicting historical rapid-fire evidence must not complete");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.rapid_fire"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Contradictory
+    }));
+}
+
+#[test]
+fn acknowledged_current_settings_remain_verified_when_rapid_fire_cannot_affect_composition() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    assert!(matches!(result, CompletionResult::Verified { .. }));
+}
+
+#[test]
 fn acknowledged_current_zero_debris_rates_do_not_prove_historical_zero_rates() {
     let mut pinned = universe();
     pinned.current = Some(true);
     pinned.acknowledged_current = Some(true);
     pinned.settings.debris_fleet = Some(0);
     pinned.settings.debris_defence = Some(0);
+    let mut completion_evidence = evidence();
+    completion_evidence.historical_rapid_fire = Some(true);
     let result = complete_candidate(&CompletionInput {
         candidate: candidate(Some(206), Some(204)),
-        evidence: evidence(),
+        evidence: completion_evidence,
         universe: pinned,
     });
     let CompletionResult::Verified { input } = result else {

@@ -127,6 +127,11 @@ pub struct PartialLifeformBonus {
 pub struct CompletionEvidence {
     #[serde(default)]
     pub participants: BTreeMap<String, ParticipantEvidence>,
+    /// Explicit battle-time rapid-fire evidence. This is kept separate from
+    /// the pinned universe snapshot because a current snapshot is not
+    /// historical proof for an older report.
+    #[serde(default)]
+    pub historical_rapid_fire: Option<bool>,
 }
 
 /// Every universe field is optional at the artifact boundary.  This prevents
@@ -310,6 +315,7 @@ pub enum CompletionResult {
 
 /// Complete one combat candidate entirely offline.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
     let candidate = &input.candidate;
     let mut issues = Vec::new();
@@ -382,11 +388,24 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
     if !issues.is_empty() {
         return CompletionResult::Incomplete { issues };
     }
-    let (Some(attacker), Some(defender), Ok((settings, rapid_fire))) =
+    let (Some(attacker), Some(defender), Ok((settings, pinned_rapid_fire))) =
         (attacker, defender, input.universe.settings.resolve())
     else {
         return CompletionResult::Incomplete { issues };
     };
+    let rapid_fire = resolve_rapid_fire(
+        candidate,
+        &input.universe,
+        &input.evidence,
+        &attacker.party,
+        &defender.party,
+        pinned_rapid_fire,
+        &mut issues,
+        &mut evidence,
+    );
+    if !issues.is_empty() {
+        return CompletionResult::Incomplete { issues };
+    }
 
     let request = CombatRequest {
         attacker: attacker.party,
@@ -1162,6 +1181,76 @@ fn validate_universe(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn resolve_rapid_fire(
+    candidate: &Candidate,
+    universe: &PinnedUniverse,
+    completion_evidence: &CompletionEvidence,
+    attacker: &PartyData,
+    defender: &PartyData,
+    pinned_rapid_fire: bool,
+    issues: &mut Vec<FieldIssue>,
+    ledger: &mut EvidenceLedger,
+) -> bool {
+    let supplied = completion_evidence.historical_rapid_fire;
+    if let Some(value) = supplied {
+        if universe.current == Some(false) && universe.settings.rapid_fire != Some(value) {
+            contradiction(issues, "universe.settings.rapid_fire");
+        } else {
+            ledger.supplied(
+                "universe.settings.rapid_fire.historical",
+                Value::from(value),
+            );
+        }
+    }
+
+    if current_snapshot_predates_report(candidate, universe)
+        && rapid_fire_can_affect(attacker, defender)
+    {
+        if let Some(value) = supplied {
+            return value;
+        }
+        issue(
+            issues,
+            FieldIssueKind::Missing,
+            "universe.settings.rapid_fire",
+            "the acknowledged current rapid-fire setting is not historical proof for this battle's execution",
+            "supply explicit historical rapid-fire evidence for the report event",
+        );
+    }
+    pinned_rapid_fire
+}
+
+fn current_snapshot_predates_report(candidate: &Candidate, universe: &PinnedUniverse) -> bool {
+    universe.current == Some(true)
+        && universe.acknowledged_current == Some(true)
+        && candidate
+            .provenance
+            .event_timestamp
+            .zip(universe.source_timestamp)
+            .is_none_or(|(event, source)| event < source)
+}
+
+fn rapid_fire_can_affect(attacker: &PartyData, defender: &PartyData) -> bool {
+    rapid_fire_from_side_can_affect(&attacker.entities, &defender.entities)
+        || rapid_fire_from_side_can_affect(&defender.entities, &attacker.entities)
+}
+
+fn rapid_fire_from_side_can_affect(
+    attackers: &combat_types::FleetComposition,
+    defenders: &combat_types::FleetComposition,
+) -> bool {
+    attackers.iter().any(|(&attacker, &count)| {
+        count > 0
+            && entity_stats().get(&attacker).is_some_and(|stats| {
+                stats
+                    .rapid_fire_against
+                    .keys()
+                    .any(|target| defenders.get(target).is_some_and(|count| *count > 0))
+            })
+    })
+}
+
 fn assessment_limitations(
     candidate: &Candidate,
     universe: &PinnedUniverse,
@@ -1197,14 +1286,7 @@ fn assessment_limitations(
             }
         }
     }
-    let current_snapshot_predates_report = universe.current == Some(true)
-        && universe.acknowledged_current == Some(true)
-        && candidate
-            .provenance
-            .event_timestamp
-            .zip(universe.source_timestamp)
-            .is_none_or(|(event, source)| event < source);
-    if !current_snapshot_predates_report {
+    if !current_snapshot_predates_report(candidate, universe) {
         return limitations;
     }
 
