@@ -7,6 +7,7 @@
 
 use super::ReportKind;
 use super::model::{Candidate, Composition, Participant};
+use combat_core::ModifiedStats;
 use combat_types::entities::entity_stats;
 use combat_types::{
     AllianceClass, CombatRequest, EntityStats, LifeformBonus, LifeformBonuses, PartyData,
@@ -60,14 +61,9 @@ impl EvidenceLedger {
         );
     }
 
-    fn public_metadata(&mut self, location: impl Into<String>, value: Value) {
-        self.fields.insert(
-            location.into(),
-            EvidenceRecord {
-                source: EvidenceSource::PublicMetadata,
-                value,
-            },
-        );
+    fn record(&mut self, source: EvidenceSource, location: impl Into<String>, value: Value) {
+        self.fields
+            .insert(location.into(), EvidenceRecord { source, value });
     }
 }
 
@@ -129,27 +125,63 @@ pub struct PinnedUniverseSettings {
 }
 
 impl PinnedUniverseSettings {
-    fn resolve(&self) -> Result<UniverseSettings, &'static str> {
-        let settings = UniverseSettings {
-            galaxies: self.galaxies.ok_or("galaxies")?,
-            systems: self.systems.ok_or("systems")?,
-            donut_galaxy: self.donut_galaxy.ok_or("donut_galaxy")?,
-            donut_systems: self.donut_systems.ok_or("donut_systems")?,
-            fleet_speed: self.fleet_speed.ok_or("fleet_speed")?,
-            debris_fleet: self.debris_fleet.ok_or("debris_fleet")?,
-            debris_defence: self.debris_defence.ok_or("debris_defence")?,
-            debris_deuterium: self.debris_deuterium.ok_or("debris_deuterium")?,
-            deuterium_save_factor: self.deuterium_save_factor.ok_or("deuterium_save_factor")?,
-        };
-        if !(1..=9).contains(&settings.galaxies)
-            || !(1..=499).contains(&settings.systems)
-            || settings.fleet_speed == 0
-            || settings.debris_fleet > 100
-            || settings.debris_defence > 100
-            || settings.deuterium_save_factor > 100
-        {
-            return Err("values");
+    fn resolve(&self) -> Result<UniverseSettings, Vec<&'static str>> {
+        let mut missing = Vec::new();
+        for (name, present) in [
+            ("galaxies", self.galaxies.is_some()),
+            ("systems", self.systems.is_some()),
+            ("donut_galaxy", self.donut_galaxy.is_some()),
+            ("donut_systems", self.donut_systems.is_some()),
+            ("fleet_speed", self.fleet_speed.is_some()),
+            ("debris_fleet", self.debris_fleet.is_some()),
+            ("debris_defence", self.debris_defence.is_some()),
+            ("debris_deuterium", self.debris_deuterium.is_some()),
+            (
+                "deuterium_save_factor",
+                self.deuterium_save_factor.is_some(),
+            ),
+        ] {
+            if !present {
+                missing.push(name);
+            }
         }
+        let mut invalid = Vec::new();
+        if self.galaxies.is_some_and(|value| !(1..=9).contains(&value)) {
+            invalid.push("galaxies");
+        }
+        if self
+            .systems
+            .is_some_and(|value| !(1..=499).contains(&value))
+        {
+            invalid.push("systems");
+        }
+        if self.fleet_speed.is_some_and(|value| value == 0) {
+            invalid.push("fleet_speed");
+        }
+        if self.debris_fleet.is_some_and(|value| value > 100) {
+            invalid.push("debris_fleet");
+        }
+        if self.debris_defence.is_some_and(|value| value > 100) {
+            invalid.push("debris_defence");
+        }
+        if self.deuterium_save_factor.is_some_and(|value| value > 100) {
+            invalid.push("deuterium_save_factor");
+        }
+        if !missing.is_empty() || !invalid.is_empty() {
+            missing.extend(invalid);
+            return Err(missing);
+        }
+        let settings = UniverseSettings {
+            galaxies: self.galaxies.expect("checked above"),
+            systems: self.systems.expect("checked above"),
+            donut_galaxy: self.donut_galaxy.expect("checked above"),
+            donut_systems: self.donut_systems.expect("checked above"),
+            fleet_speed: self.fleet_speed.expect("checked above"),
+            debris_fleet: self.debris_fleet.expect("checked above"),
+            debris_defence: self.debris_defence.expect("checked above"),
+            debris_deuterium: self.debris_deuterium.expect("checked above"),
+            deuterium_save_factor: self.deuterium_save_factor.expect("checked above"),
+        };
         Ok(settings)
     }
 }
@@ -163,10 +195,12 @@ pub struct PinnedUniverse {
     pub source: EvidenceSource,
     pub source_timestamp: Option<u64>,
     pub source_version: Option<String>,
+    /// Whether these settings describe the current snapshot. `None` means the
+    /// artifact did not make the historical/current choice.
     #[serde(default)]
-    pub current: bool,
+    pub current: Option<bool>,
     #[serde(default)]
-    pub acknowledged_current: bool,
+    pub acknowledged_current: Option<bool>,
 }
 
 /// Structured local artifact consumed by both the library and CLI.
@@ -234,6 +268,14 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
     let candidate = &input.candidate;
     let mut issues = Vec::new();
     let mut evidence = EvidenceLedger::default();
+
+    evidence.report(
+        "battle.provenance",
+        serde_json::to_value(&candidate.provenance).unwrap_or(Value::Null),
+    );
+    if let Some(loot_percentage) = candidate.loot_percentage {
+        evidence.report("loot_percentage", Value::from(loot_percentage));
+    }
 
     if candidate.report_kind != ReportKind::Combat {
         issue(
@@ -313,7 +355,8 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         defender_bonuses: None,
         ..CombatRequest::default()
     };
-    evidence.public_metadata(
+    evidence.record(
+        input.universe.source,
         "universe",
         serde_json::to_value(&input.universe).unwrap_or(Value::Null),
     );
@@ -336,6 +379,10 @@ struct ResolvedParticipant {
     party: PartyData,
 }
 
+// This resolver is intentionally one vertical slice: each accepted value is
+// reconciled with report evidence, completion evidence, and the ledger before
+// the party can be constructed. Splitting it would obscure that fail-closed
+// boundary and make provenance omissions easier to introduce.
 #[allow(clippy::too_many_lines)]
 fn resolve_participant(
     participant: &Participant,
@@ -346,6 +393,12 @@ fn resolve_participant(
 ) -> ResolvedParticipant {
     let location = participant.slot.clone();
     let supplied = all_evidence.participants.get(&location);
+    if let Some(composition) = participant.entities.as_ref() {
+        validate_composition(composition, &location, issues);
+    }
+    if let Some(composition) = supplied.and_then(|e| e.entities.as_ref()) {
+        validate_composition(composition, &location, issues);
+    }
     let entities = match (
         &participant.entities,
         supplied.and_then(|e| e.entities.as_ref()),
@@ -382,7 +435,9 @@ fn resolve_participant(
     };
 
     let player_class = resolve_class(
-        participant.character_class_id.map(player_class),
+        participant
+            .character_class_id
+            .and_then(|value| observed_player_class(value, &location, issues)),
         supplied.and_then(|e| e.player_class),
         &location,
         "player_class",
@@ -390,24 +445,44 @@ fn resolve_participant(
         ledger,
     );
     let alliance_class = resolve_class(
-        participant.alliance_class_id.map(alliance_class),
+        participant
+            .alliance_class_id
+            .and_then(|value| observed_alliance_class(value, &location, issues)),
         supplied.and_then(|e| e.alliance_class),
         &location,
         "alliance_class",
         issues,
         ledger,
     );
+    if participant.reported_unit_stats.is_some() && supplied.is_none() {
+        issue(
+            issues,
+            review_kind(review_required, &location, "lifeform"),
+            format!("{location}.lifeform"),
+            "reported starting statistics do not establish whether lifeform modifiers were active",
+            "supply explicit per-entity lifeform percentages or confirm that no lifeform modifiers apply",
+        );
+    }
     let technology = resolve_technology(
         participant,
         supplied,
-        player_class.unwrap_or_default(),
-        alliance_class.unwrap_or_default(),
+        player_class,
+        alliance_class,
         review_required,
         issues,
         ledger,
     );
     let lifeform = supplied.map_or_else(LifeformBonuses::default, |e| {
         for (&entity, bonus) in &e.lifeform {
+            if !entity_stats().contains_key(&entity) {
+                issue(
+                    issues,
+                    FieldIssueKind::Unsupported,
+                    format!("{location}.lifeform.{entity}"),
+                    "the supplied lifeform bonus names an entity this simulator does not support",
+                    "remove it or supply a bonus for a supported entity",
+                );
+            }
             ledger.supplied(
                 format!("{location}.lifeform.{entity}"),
                 serde_json::to_value(bonus).unwrap_or(Value::Null),
@@ -453,11 +528,14 @@ fn resolve_participant(
     }
 }
 
+// Keep the evidence reconciliation together so basis checks and the
+// fail-closed class requirements cannot drift apart across helper calls.
+#[allow(clippy::too_many_lines)]
 fn resolve_technology(
     participant: &Participant,
     supplied: Option<&ParticipantEvidence>,
-    player_class: PlayerClass,
-    alliance_class: AllianceClass,
+    player_class: Option<PlayerClass>,
+    alliance_class: Option<AllianceClass>,
     review_required: &[String],
     issues: &mut Vec<FieldIssue>,
     ledger: &mut EvidenceLedger,
@@ -507,31 +585,89 @@ fn resolve_technology(
         format!("{}.technology", participant.slot),
         serde_json::to_value(explicit).unwrap_or(Value::Null),
     );
-    let bonuses = PlayerBonuses {
-        player_class,
-        alliance_class,
-        ..PlayerBonuses::default()
-    };
     let effective = match explicit.basis {
-        TechnologyBasis::Researched => values.effective_levels(Some(&bonuses)),
+        TechnologyBasis::Researched => {
+            let (Some(player_class), Some(alliance_class)) = (player_class, alliance_class) else {
+                if player_class.is_none() {
+                    issue(
+                        issues,
+                        review_kind(review_required, &participant.slot, "player_class"),
+                        format!("{}.player_class", participant.slot),
+                        "researched technology cannot be resolved without a confirmed player class",
+                        "supply the player class or explicitly confirm no player class",
+                    );
+                }
+                if alliance_class.is_none() {
+                    issue(
+                        issues,
+                        review_kind(review_required, &participant.slot, "alliance_class"),
+                        format!("{}.alliance_class", participant.slot),
+                        "researched technology cannot be resolved without a confirmed alliance class",
+                        "supply the alliance class or explicitly confirm no alliance class",
+                    );
+                }
+                return None;
+            };
+            let bonuses = PlayerBonuses {
+                player_class,
+                alliance_class,
+                ..PlayerBonuses::default()
+            };
+            values.effective_levels(Some(&bonuses))
+        }
         TechnologyBasis::AlreadyEffective => values,
     };
-    if let Some(candidate_value) = candidate_technology.weapon {
-        if candidate_value != effective.weapon {
-            contradiction(issues, &format!("{}.weapon", participant.slot));
+    // The proxy's percentage-divided-by-ten basis is provisional. Only a
+    // candidate that explicitly declares the same basis can be compared with
+    // the supplied evidence; otherwise doing so would invent a contradiction
+    // between researched and already-effective representations.
+    let candidate_basis = match candidate_technology.basis.as_str() {
+        "researched" => Some(TechnologyBasis::Researched),
+        "already_effective" => Some(TechnologyBasis::AlreadyEffective),
+        "reported_combat_bonus_divided_by_ten" | "" => None,
+        _ => {
+            issue(
+                issues,
+                FieldIssueKind::UnsupportedBasis,
+                format!("{}.basis", participant.slot),
+                "the report technology basis is not documented for completion",
+                "supply technology evidence with a researched or already-effective basis",
+            );
+            None
         }
-    }
-    if let Some(candidate_value) = candidate_technology.shield {
-        if candidate_value != effective.shield {
-            contradiction(issues, &format!("{}.shield", participant.slot));
-        }
-    }
-    if let Some(candidate_value) = candidate_technology.armour {
-        if candidate_value != effective.armour {
-            contradiction(issues, &format!("{}.armour", participant.slot));
+    };
+    if candidate_basis == Some(explicit.basis) {
+        for (field, reported, completed) in [
+            ("weapon", candidate_technology.weapon, effective.weapon),
+            ("shield", candidate_technology.shield, effective.shield),
+            ("armour", candidate_technology.armour, effective.armour),
+        ] {
+            if let Some(candidate_value) = reported {
+                if candidate_value != completed_for_basis(completed, explicit.basis, field, values)
+                {
+                    contradiction(issues, &format!("{}.{}", participant.slot, field));
+                }
+            }
         }
     }
     Some(effective)
+}
+
+fn completed_for_basis(
+    effective: u8,
+    basis: TechnologyBasis,
+    field: &str,
+    researched: Technology,
+) -> u8 {
+    match basis {
+        TechnologyBasis::AlreadyEffective => effective,
+        TechnologyBasis::Researched => match field {
+            "weapon" => researched.weapon,
+            "shield" => researched.shield,
+            "armour" => researched.armour,
+            _ => effective,
+        },
+    }
 }
 
 fn resolve_class<T: Copy + PartialEq + Serialize>(
@@ -619,6 +755,39 @@ fn validate_reported_stats(
     }
 }
 
+fn validate_composition(composition: &Composition, location: &str, issues: &mut Vec<FieldIssue>) {
+    if composition.is_empty() {
+        issue(
+            issues,
+            FieldIssueKind::Missing,
+            format!("{location}.entities"),
+            "the participant composition is empty, so there is no runnable battle fleet",
+            "supply at least one supported ship or defence with its count",
+        );
+    }
+    let database = entity_stats();
+    for (&entity, &count) in composition {
+        if !database.contains_key(&entity) {
+            issue(
+                issues,
+                FieldIssueKind::Unsupported,
+                format!("{location}.entities.{entity}"),
+                "the participant composition contains an entity this simulator does not support",
+                "replace it with an entity listed by the simulator",
+            );
+        }
+        if count == 0 {
+            issue(
+                issues,
+                FieldIssueKind::Missing,
+                format!("{location}.entities.{entity}"),
+                "the participant composition must contain a positive count",
+                "supply a positive count for this entity or remove it",
+            );
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct StartingStats {
     weapon: f64,
@@ -631,16 +800,13 @@ fn modified_stats(
     technology: &Technology,
     lifeform: LifeformBonus,
 ) -> StartingStats {
-    let weapon_modifier =
-        1.0 + f64::from(technology.weapon) * 0.1 + f64::from(lifeform.weapon) / 100.0;
-    let shield_modifier =
-        1.0 + f64::from(technology.shield) * 0.1 + f64::from(lifeform.shield) / 100.0;
-    let armour_modifier =
-        1.0 + f64::from(technology.armour) * 0.1 + f64::from(lifeform.armour) / 100.0;
+    let modified = ModifiedStats::calculate(base, technology, lifeform);
     StartingStats {
-        weapon: (f64::from(base.weapon) * weapon_modifier).floor(),
-        shield: (f64::from(base.shield) * shield_modifier).floor(),
-        armour: (f64::from(base.armour) * armour_modifier).floor(),
+        weapon: f64::from(modified.weapon),
+        shield: f64::from(modified.shield),
+        // Report `armor` is the combat hull value. The engine converts the
+        // armour resource stat into hull points before flooring it.
+        armour: f64::from(modified.hull),
     }
 }
 
@@ -661,14 +827,36 @@ fn validate_universe(
             "supply public metadata for the report's community and universe",
         );
     }
-    if universe.settings.resolve().is_err() {
-        issue(
-            issues,
-            FieldIssueKind::IncompleteUniverse,
-            "universe.settings",
-            "all universe settings must be explicitly supplied and valid",
-            "supply every universe setting, including debris percentages and toggles",
-        );
+    if let Err(fields) = universe.settings.resolve() {
+        for field in fields {
+            let missing = match field {
+                "galaxies" => universe.settings.galaxies.is_none(),
+                "systems" => universe.settings.systems.is_none(),
+                "donut_galaxy" => universe.settings.donut_galaxy.is_none(),
+                "donut_systems" => universe.settings.donut_systems.is_none(),
+                "fleet_speed" => universe.settings.fleet_speed.is_none(),
+                "debris_fleet" => universe.settings.debris_fleet.is_none(),
+                "debris_defence" => universe.settings.debris_defence.is_none(),
+                "debris_deuterium" => universe.settings.debris_deuterium.is_none(),
+                "deuterium_save_factor" => universe.settings.deuterium_save_factor.is_none(),
+                _ => false,
+            };
+            issue(
+                issues,
+                if missing {
+                    FieldIssueKind::Missing
+                } else {
+                    FieldIssueKind::Unsupported
+                },
+                format!("universe.settings.{field}"),
+                if missing {
+                    format!("universe setting {field} is required and has not been supplied")
+                } else {
+                    format!("universe setting {field} is outside the supported range")
+                },
+                format!("supply a valid value for universe setting {field}"),
+            );
+        }
     }
     if universe.source_timestamp.is_none() || universe.source_version.is_none() {
         issue(
@@ -679,7 +867,15 @@ fn validate_universe(
             "supply the public snapshot timestamp and game version",
         );
     }
-    if universe.current && !universe.acknowledged_current {
+    if universe.current.is_none() && universe.acknowledged_current != Some(true) {
+        issue(
+            issues,
+            FieldIssueKind::Missing,
+            "universe.current",
+            "the pinned snapshot must explicitly state whether it is current or historical",
+            "supply current: true or current: false for the pinned universe settings",
+        );
+    } else if universe.current == Some(true) && universe.acknowledged_current != Some(true) {
         issue(
             issues,
             FieldIssueKind::CurrentSnapshotUnacknowledged,
@@ -687,11 +883,34 @@ fn validate_universe(
             "a current universe snapshot cannot stand in for historical settings without explicit acknowledgement",
             "acknowledge the snapshot as current or supply historical settings",
         );
+    } else if universe.current == Some(false) && universe.acknowledged_current == Some(true) {
+        issue(
+            issues,
+            FieldIssueKind::Contradictory,
+            "universe.acknowledged_current",
+            "a historical snapshot cannot also be acknowledged as current",
+            "set acknowledged_current to false or mark the snapshot current",
+        );
     }
-    ledger.public_metadata(
+    ledger.record(
+        universe.source,
         "universe.identity",
         serde_json::json!({"community": universe.community, "universe": universe.universe}),
     );
+    if let Some(timestamp) = universe.source_timestamp {
+        ledger.record(
+            universe.source,
+            "universe.source_timestamp",
+            Value::from(timestamp),
+        );
+    }
+    if let Some(version) = universe.source_version.as_ref() {
+        ledger.record(
+            universe.source,
+            "universe.source_version",
+            Value::from(version.clone()),
+        );
+    }
 }
 
 fn player_class(value: u8) -> PlayerClass {
@@ -703,12 +922,50 @@ fn player_class(value: u8) -> PlayerClass {
     }
 }
 
+fn observed_player_class(
+    value: u8,
+    location: &str,
+    issues: &mut Vec<FieldIssue>,
+) -> Option<PlayerClass> {
+    if value <= 3 {
+        Some(player_class(value))
+    } else {
+        issue(
+            issues,
+            FieldIssueKind::Unsupported,
+            format!("{location}.player_class"),
+            "the report contains an unsupported player class identifier",
+            "supply a supported player class identifier or explicit class evidence",
+        );
+        None
+    }
+}
+
 fn alliance_class(value: u8) -> AllianceClass {
     match value {
         1 => AllianceClass::Trader,
         2 => AllianceClass::Warrior,
         3 => AllianceClass::Researcher,
         _ => AllianceClass::None,
+    }
+}
+
+fn observed_alliance_class(
+    value: u8,
+    location: &str,
+    issues: &mut Vec<FieldIssue>,
+) -> Option<AllianceClass> {
+    if value <= 3 {
+        Some(alliance_class(value))
+    } else {
+        issue(
+            issues,
+            FieldIssueKind::Unsupported,
+            format!("{location}.alliance_class"),
+            "the report contains an unsupported alliance class identifier",
+            "supply a supported alliance class identifier or explicit class evidence",
+        );
+        None
     }
 }
 

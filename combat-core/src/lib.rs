@@ -5,7 +5,7 @@ mod instant;
 pub mod report_builder;
 mod scaling;
 mod simulator;
-mod stats;
+pub mod stats;
 
 pub use combat::Combat;
 pub use report_builder::ReportBuilder;
@@ -14,6 +14,7 @@ pub use scaling::{
     upscale_result_with_originals,
 };
 pub use simulator::Simulator;
+pub use stats::{ModifiedStats, StatsCache};
 
 #[cfg(test)]
 mod tests;

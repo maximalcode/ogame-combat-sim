@@ -93,3 +93,66 @@ fn report_complete_renders_the_shared_library_result() {
     assert!(stdout.contains("\"public_metadata\""));
     assert!(stdout.contains("\"observed\""));
 }
+
+#[test]
+fn report_complete_redacts_private_values_from_structural_errors() {
+    let path = std::env::temp_dir().join(format!(
+        "combat-cli-completion-invalid-{}.json",
+        std::process::id()
+    ));
+    std::fs::write(
+        &path,
+        br#"{"candidate":{"technology":{"basis":"cr-en-1-private-token"}}}"#,
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_combat-cli"))
+        .args(["report", "complete", "--file"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    let _ = std::fs::remove_file(&path);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.contains("cr-en-1-private-token"));
+    assert!(!stderr.contains(path.to_str().unwrap()));
+}
+
+#[test]
+fn report_complete_renders_all_field_issues_from_the_shared_result() {
+    let path = std::env::temp_dir().join(format!(
+        "combat-cli-completion-incomplete-{}.json",
+        std::process::id()
+    ));
+    let artifact = serde_json::json!({
+        "candidate": {
+            "schema_version": 1,
+            "report_kind": "combat",
+            "provenance": {"source":"synthetic","community":"en","universe":1,
+                "event_timestamp":1_700_000_000,"game_version":"13.0.1"},
+            "attackers": [], "defenders": [], "observed": null,
+            "planet_resources": null, "loot_percentage": null, "review_required": []
+        },
+        "evidence": {"participants": {}},
+        "universe": {
+            "community":"en", "universe":1, "settings":{},
+            "source":"public_metadata", "source_timestamp":1_700_000_100,
+            "source_version":"13.0.1", "current":false,
+            "acknowledged_current":false
+        }
+    });
+    std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_combat-cli"))
+        .args(["report", "complete", "--file"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    let _ = std::fs::remove_file(&path);
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Incomplete combat report candidate"));
+    assert!(stdout.contains("attackers"));
+    assert!(stdout.contains("defenders"));
+    assert!(stdout.contains("universe.settings.galaxies"));
+    assert!(stdout.contains("universe.settings.debris_deuterium"));
+    assert!(stdout.contains("universe.settings.deuterium_save_factor"));
+}

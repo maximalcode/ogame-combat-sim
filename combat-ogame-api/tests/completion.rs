@@ -24,8 +24,8 @@ fn universe() -> PinnedUniverse {
         source: EvidenceSource::PublicMetadata,
         source_timestamp: Some(1_700_000_100),
         source_version: Some("13.0.1".to_owned()),
-        current: false,
-        acknowledged_current: false,
+        current: Some(false),
+        acknowledged_current: Some(false),
     }
 }
 
@@ -136,13 +136,16 @@ fn a_complete_single_report_becomes_an_effective_request_with_a_separate_ledger(
             .to_string()
             .contains("winner")
     );
+    let simulated = combat_core::Simulator::new().simulate_multiple(&input.request);
+    assert_eq!(simulated.simulations, 1);
+    assert_eq!(simulated.results.len(), 1);
 }
 
 #[test]
 fn completion_returns_all_actionable_issues_without_a_request() {
     let mut pinned = universe();
-    pinned.current = true;
-    pinned.acknowledged_current = false;
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(false);
     pinned.settings.debris_fleet = None;
     let result = complete_candidate(&CompletionInput {
         candidate: candidate(None, None),
@@ -155,11 +158,10 @@ fn completion_returns_all_actionable_issues_without_a_request() {
     assert!(issues.iter().any(|issue| issue.location == "A1.entities"));
     assert!(issues.iter().any(|issue| issue.location == "D1.entities"));
     assert!(issues.iter().any(|issue| issue.location == "A1.technology"));
-    assert!(
-        issues
-            .iter()
-            .any(|issue| issue.location == "universe.settings")
-    );
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.debris_fleet"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
     assert!(
         issues
             .iter()
@@ -242,4 +244,159 @@ fn already_effective_technology_is_used_directly_and_lifeform_units_are_explicit
         input.evidence.fields["A1.reported_base_stats_booster"].source,
         EvidenceSource::Report
     );
+}
+
+#[test]
+fn engine_starting_stats_accept_weapon_rounding_and_armour_hull_units() {
+    let mut attacker = participant("A1", Some(204));
+    attacker.reported_unit_stats = Some(serde_json::json!({
+        "204": {"weapon": 115, "shield": 23, "armor": 920}
+    }));
+    let mut candidate = candidate(Some(204), Some(401));
+    candidate.attackers = vec![attacker];
+    let result = complete_candidate(&CompletionInput {
+        candidate,
+        evidence: evidence(),
+        universe: universe(),
+    });
+    assert!(matches!(result, CompletionResult::Verified { .. }));
+}
+
+#[test]
+fn missing_classes_and_unsupported_compositions_block_a_request() {
+    let mut attacker = participant("A1", Some(204));
+    attacker.character_class_id = None;
+    attacker.alliance_class_id = None;
+    let mut candidate = candidate(Some(204), Some(401));
+    candidate.attackers = vec![attacker];
+    let mut evidence = evidence();
+    evidence.participants.get_mut("A1").unwrap().player_class = None;
+    evidence.participants.get_mut("A1").unwrap().alliance_class = None;
+    evidence.participants.get_mut("A1").unwrap().entities = Some(BTreeMap::from([(9999, 20)]));
+    let result = complete_candidate(&CompletionInput {
+        candidate,
+        evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("expected incomplete result");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "A1.entities.9999"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unsupported
+    }));
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.location == "A1.player_class")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.location == "A1.alliance_class")
+    );
+}
+
+#[test]
+fn every_missing_universe_setting_has_a_targeted_issue() {
+    let mut pinned = universe();
+    pinned.settings = PinnedUniverseSettings::default();
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("expected incomplete result");
+    };
+    for field in [
+        "galaxies",
+        "systems",
+        "donut_galaxy",
+        "donut_systems",
+        "fleet_speed",
+        "debris_fleet",
+        "debris_defence",
+        "debris_deuterium",
+        "deuterium_save_factor",
+    ] {
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.location == format!("universe.settings.{field}")),
+            "missing targeted issue for {field}"
+        );
+    }
+}
+
+#[test]
+fn missing_and_invalid_universe_settings_are_reported_together() {
+    let mut pinned = universe();
+    pinned.settings.galaxies = Some(0);
+    pinned.settings.systems = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("expected incomplete result");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.galaxies"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unsupported
+    }));
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.systems"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+}
+
+#[test]
+fn supplied_universe_and_battle_provenance_remain_distinct() {
+    let mut pinned = universe();
+    pinned.source = EvidenceSource::Supplied;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("expected verified result");
+    };
+    assert_eq!(
+        input.evidence.fields["universe"].source,
+        EvidenceSource::Supplied
+    );
+    assert_eq!(
+        input.evidence.fields["battle.provenance"].source,
+        EvidenceSource::Report
+    );
+    assert_eq!(
+        input.evidence.fields["loot_percentage"].source,
+        EvidenceSource::Report
+    );
+}
+
+#[test]
+fn omitted_temporal_status_is_a_missing_issue() {
+    let mut value = serde_json::to_value(universe()).unwrap();
+    value.as_object_mut().unwrap().remove("current");
+    value
+        .as_object_mut()
+        .unwrap()
+        .remove("acknowledged_current");
+    let pinned: PinnedUniverse = serde_json::from_value(value).unwrap();
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("expected incomplete result");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.current"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
 }

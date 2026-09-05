@@ -65,6 +65,14 @@ are discarded through an explicit output allowlist. Output still contains
 battle evidence: review privacy and obtain publication consent before sharing
 it or creating a regression fixture. No fixture is published automatically.
 
+To complete a single combat candidate offline, pass a structured artifact to
+`combat-cli report complete --file`. The artifact supplies explicit participant
+evidence and a fully pinned universe. Completion reports every missing or
+unsupported field together; it never fills absent technology, class, lifeform,
+composition, or temporal status with a default. A verified result keeps the
+battle provenance and universe snapshot provenance in a separate evidence
+ledger, while the observed outcome stays outside the `CombatRequest`.
+
 ## Validation
 
 Normal Rust tests are offline: synthetic schema examples test parsing and

@@ -45,9 +45,12 @@ pub fn complete(args: &ReportArgs) -> Result<String, String> {
         "report complete requires --file PATH containing a completion artifact".to_owned()
     })?;
     let json = std::fs::read_to_string(path)
-        .map_err(|_| format!("could not read completion artifact {}", path.display()))?;
+        .map_err(|_| "could not read completion artifact".to_owned())?;
     let input: CompletionInput = serde_json::from_str(&json)
-        .map_err(|error| format!("invalid completion artifact JSON: {error}"))?;
+        .map_err(|_| {
+            "invalid completion artifact JSON; expected a sanitized candidate, evidence and pinned universe"
+                .to_owned()
+        })?;
     let result = complete_candidate(&input);
     let machine = serde_json::to_string_pretty(&result)
         .map_err(|_| "could not serialize completion result".to_owned())?;

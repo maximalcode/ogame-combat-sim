@@ -9,6 +9,7 @@ repository.workspace = true
 description = "OGame public XML metadata and on-demand community-proxy report imports"
 
 [dependencies]
+combat-core = { path = "../combat-core", version = "0.1.0" }
 combat-types = { path = "../combat-types" }
 quick-xml = { workspace = true }
 reqwest = { workspace = true }
