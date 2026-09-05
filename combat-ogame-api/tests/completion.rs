@@ -264,10 +264,22 @@ fn acknowledged_current_settings_keep_execution_verified_but_limit_historical_de
         panic!("acknowledged current settings should execute");
     };
 
-    assert_eq!(input.assessment_limitations.len(), 1);
-    let limitation = &input.assessment_limitations[0];
-    assert_eq!(limitation.metric, "generated_debris");
-    assert!(!limitation.affects_execution);
+    assert_eq!(input.assessment_limitations.len(), 5);
+    for metric in [
+        "generated_debris",
+        "moon_chance",
+        "recyclers_needed",
+        "attacker_profit",
+        "defender_profit",
+    ] {
+        let limitation = input
+            .assessment_limitations
+            .iter()
+            .find(|limitation| limitation.metric == metric)
+            .unwrap_or_else(|| panic!("missing limitation for {metric}"));
+        assert_eq!(limitation.location, "universe.settings.debris_fleet");
+        assert!(!limitation.affects_execution);
+    }
 }
 
 #[test]

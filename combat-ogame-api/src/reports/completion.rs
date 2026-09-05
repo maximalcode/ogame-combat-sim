@@ -1204,12 +1204,22 @@ fn assessment_limitations(
         return limitations;
     }
 
-    limitations.push(AssessmentLimitation {
-        metric: "generated_debris".to_owned(),
-        location: "universe.settings.debris_fleet".to_owned(),
-        explanation: "the acknowledged current universe snapshot is not historical proof for the report event; generated debris cannot be assessed against the battle-time debris rules".to_owned(),
-        affects_execution: false,
-    });
+    for metric in [
+        "generated_debris",
+        "moon_chance",
+        "recyclers_needed",
+        "attacker_profit",
+        "defender_profit",
+    ] {
+        limitations.push(AssessmentLimitation {
+            metric: metric.to_owned(),
+            location: "universe.settings.debris_fleet".to_owned(),
+            explanation: format!(
+                "the acknowledged current universe snapshot is not historical proof for the report event; {metric} cannot be assessed against the battle-time debris rules"
+            ),
+            affects_execution: false,
+        });
+    }
     limitations
 }
 
