@@ -1116,7 +1116,7 @@ fn validate_universe(
             "supply the public snapshot timestamp and game version",
         );
     }
-    if universe.current.is_none() && universe.acknowledged_current != Some(true) {
+    if universe.current.is_none() {
         issue(
             issues,
             FieldIssueKind::Missing,

@@ -1097,3 +1097,22 @@ fn omitted_temporal_status_is_a_missing_issue() {
             && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
     }));
 }
+
+#[test]
+fn acknowledged_snapshot_without_temporal_status_is_incomplete() {
+    let mut pinned = universe();
+    pinned.current = None;
+    pinned.acknowledged_current = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("an acknowledged snapshot without temporal status must be incomplete");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.current"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+}
