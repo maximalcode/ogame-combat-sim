@@ -105,17 +105,16 @@ pub fn pinned_universe_from_server_data(
             1,
             u32::from(u8::MAX),
         )?),
+        rapid_fire: Some(metadata.rapid_fire),
         debris_fleet: Some(checked_factor("debris_factor", metadata.debris_factor)?),
         debris_defence: Some(checked_factor(
             "debris_factor_def",
             metadata.debris_factor_def,
         )?),
-        debris_deuterium: Some(metadata.deuterium_in_debris.ok_or_else(|| {
-            UniverseResolutionError::InvalidSetting {
-                field: "deuterium_in_debris",
-                value: "missing".to_owned(),
-            }
-        })?),
+        // This setting only affects derived debris/economics output. Preserve
+        // an omitted public value as unknown so completion can execute the
+        // battle while marking those outputs not assessable.
+        debris_deuterium: metadata.deuterium_in_debris,
         deuterium_save_factor: Some(checked_factor(
             "global_deuterium_save_factor",
             metadata.global_deuterium_save_factor,

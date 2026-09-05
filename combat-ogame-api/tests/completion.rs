@@ -20,6 +20,7 @@ fn universe() -> PinnedUniverse {
             donut_galaxy: Some(true),
             donut_systems: Some(true),
             fleet_speed: Some(1),
+            rapid_fire: Some(true),
             debris_fleet: Some(30),
             debris_defence: Some(0),
             debris_deuterium: Some(false),
@@ -115,6 +116,7 @@ fn public_server_metadata_resolves_to_a_current_pinned_universe() {
     assert_eq!(resolved.settings.galaxies, Some(9));
     assert_eq!(resolved.settings.systems, Some(499));
     assert_eq!(resolved.settings.fleet_speed, Some(2));
+    assert_eq!(resolved.settings.rapid_fire, Some(true));
     assert_eq!(resolved.settings.debris_fleet, Some(70));
     assert_eq!(resolved.settings.debris_defence, Some(30));
     assert_eq!(resolved.settings.debris_deuterium, Some(true));
@@ -144,13 +146,80 @@ fn public_server_metadata_rejects_non_integral_or_out_of_range_units() {
 }
 
 #[test]
-fn public_server_metadata_rejects_missing_combat_setting_instead_of_defaulting_it() {
+fn public_server_metadata_preserves_missing_output_only_setting_as_unknown() {
     let xml = include_str!("fixtures/serverData.xml")
         .replace("  <deuteriumInDebris>1</deuteriumInDebris>\n", "");
     let server = parse_server_data(&xml).unwrap();
-    let error = pinned_universe_from_server_data("en", 123, &server).unwrap_err();
+    let pinned = pinned_universe_from_server_data("en", 123, &server).unwrap();
 
-    assert!(error.to_string().contains("deuterium_in_debris"));
+    assert_eq!(pinned.settings.debris_deuterium, None);
+}
+
+#[test]
+fn public_rapid_fire_setting_reaches_the_completed_request() {
+    let mut server = parse_server_data(include_str!("fixtures/serverData.xml")).unwrap();
+    server.number = 1;
+    server.rapid_fire = false;
+    let pinned = pinned_universe_from_server_data("en", 1, &server).unwrap();
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: PinnedUniverse {
+            acknowledged_current: Some(true),
+            ..pinned
+        },
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("expected verified input");
+    };
+    assert!(!input.request.use_rapid_fire);
+}
+
+#[test]
+fn missing_debris_settings_keep_execution_verified_with_metric_limitations() {
+    let xml = include_str!("fixtures/serverData.xml")
+        .replace("  <deuteriumInDebris>1</deuteriumInDebris>\n", "");
+    let server = parse_server_data(&xml).unwrap();
+    let pinned = pinned_universe_from_server_data("en", 123, &server)
+        .expect("missing output-only setting should remain resolvable");
+    let pinned = PinnedUniverse {
+        settings: PinnedUniverseSettings {
+            debris_fleet: None,
+            debris_defence: None,
+            ..pinned.settings
+        },
+        ..pinned
+    };
+    let mut candidate = candidate(Some(204), Some(401));
+    candidate.provenance.universe = 123;
+    let result = complete_candidate(&CompletionInput {
+        candidate,
+        evidence: evidence(),
+        universe: PinnedUniverse {
+            current: Some(false),
+            acknowledged_current: Some(false),
+            ..pinned
+        },
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing debris settings must not block combat execution");
+    };
+    assert!(input.assessment_limitations.iter().any(|limitation| {
+        limitation.metric == "generated_debris"
+            && limitation.location == "universe.settings.debris_deuterium"
+            && !limitation.affects_execution
+    }));
+    for field in ["debris_fleet", "debris_defence"] {
+        assert!(input.assessment_limitations.iter().any(|limitation| {
+            limitation.metric == "generated_debris"
+                && limitation.location == format!("universe.settings.{field}")
+                && !limitation.affects_execution
+        }));
+    }
+    let universe_evidence = &input.evidence.fields["universe"].value["settings"];
+    assert!(universe_evidence["debris_fleet"].is_null());
+    assert!(universe_evidence["debris_defence"].is_null());
+    assert!(universe_evidence["debris_deuterium"].is_null());
 }
 
 #[tokio::test]
@@ -260,10 +329,6 @@ fn completion_returns_all_actionable_issues_without_a_request() {
     assert!(issues.iter().any(|issue| issue.location == "A1.entities"));
     assert!(issues.iter().any(|issue| issue.location == "D1.entities"));
     assert!(issues.iter().any(|issue| issue.location == "A1.technology"));
-    assert!(issues.iter().any(|issue| {
-        issue.location == "universe.settings.debris_fleet"
-            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
-    }));
     assert!(
         issues
             .iter()
@@ -937,9 +1002,7 @@ fn every_missing_universe_setting_has_a_targeted_issue() {
         "donut_galaxy",
         "donut_systems",
         "fleet_speed",
-        "debris_fleet",
-        "debris_defence",
-        "debris_deuterium",
+        "rapid_fire",
         "deuterium_save_factor",
     ] {
         assert!(

@@ -139,6 +139,7 @@ pub struct PinnedUniverseSettings {
     pub donut_galaxy: Option<bool>,
     pub donut_systems: Option<bool>,
     pub fleet_speed: Option<u8>,
+    pub rapid_fire: Option<bool>,
     pub debris_fleet: Option<u8>,
     pub debris_defence: Option<u8>,
     pub debris_deuterium: Option<bool>,
@@ -146,7 +147,7 @@ pub struct PinnedUniverseSettings {
 }
 
 impl PinnedUniverseSettings {
-    fn resolve(&self) -> Result<UniverseSettings, Vec<&'static str>> {
+    fn resolve(&self) -> Result<(UniverseSettings, bool), Vec<&'static str>> {
         let mut missing = Vec::new();
         for (name, present) in [
             ("galaxies", self.galaxies.is_some()),
@@ -154,9 +155,7 @@ impl PinnedUniverseSettings {
             ("donut_galaxy", self.donut_galaxy.is_some()),
             ("donut_systems", self.donut_systems.is_some()),
             ("fleet_speed", self.fleet_speed.is_some()),
-            ("debris_fleet", self.debris_fleet.is_some()),
-            ("debris_defence", self.debris_defence.is_some()),
-            ("debris_deuterium", self.debris_deuterium.is_some()),
+            ("rapid_fire", self.rapid_fire.is_some()),
             (
                 "deuterium_save_factor",
                 self.deuterium_save_factor.is_some(),
@@ -198,12 +197,23 @@ impl PinnedUniverseSettings {
             donut_galaxy: self.donut_galaxy.expect("checked above"),
             donut_systems: self.donut_systems.expect("checked above"),
             fleet_speed: self.fleet_speed.expect("checked above"),
-            debris_fleet: self.debris_fleet.expect("checked above"),
-            debris_defence: self.debris_defence.expect("checked above"),
-            debris_deuterium: self.debris_deuterium.expect("checked above"),
+            // Debris rates affect derived output, not combat rounds. Unknown
+            // rates use the engine's required scalar representation only so a
+            // battle can execute; the missing facts remain visible in the
+            // assessment limitations below.
+            debris_fleet: self
+                .debris_fleet
+                .unwrap_or_else(|| UniverseSettings::default().debris_fleet),
+            debris_defence: self
+                .debris_defence
+                .unwrap_or_else(|| UniverseSettings::default().debris_defence),
+            // Deuterium debris changes derived output only. Keep execution
+            // complete with the engine's neutral value and retain the missing
+            // fact as an assessment limitation below.
+            debris_deuterium: self.debris_deuterium.unwrap_or(false),
             deuterium_save_factor: self.deuterium_save_factor.expect("checked above"),
         };
-        Ok(settings)
+        Ok((settings, self.rapid_fire.expect("checked above")))
     }
 }
 
@@ -372,7 +382,7 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
     if !issues.is_empty() {
         return CompletionResult::Incomplete { issues };
     }
-    let (Some(attacker), Some(defender), Ok(settings)) =
+    let (Some(attacker), Some(defender), Ok((settings, rapid_fire))) =
         (attacker, defender, input.universe.settings.resolve())
     else {
         return CompletionResult::Incomplete { issues };
@@ -382,6 +392,7 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         attacker: attacker.party,
         defender: defender.party,
         universe_settings: Some(settings),
+        use_rapid_fire: rapid_fire,
         simulations: 1,
         planet_resources: None,
         plunder_percentage: candidate.loot_percentage.unwrap_or(50),
@@ -1075,9 +1086,7 @@ fn validate_universe(
                 "donut_galaxy" => universe.settings.donut_galaxy.is_none(),
                 "donut_systems" => universe.settings.donut_systems.is_none(),
                 "fleet_speed" => universe.settings.fleet_speed.is_none(),
-                "debris_fleet" => universe.settings.debris_fleet.is_none(),
-                "debris_defence" => universe.settings.debris_defence.is_none(),
-                "debris_deuterium" => universe.settings.debris_deuterium.is_none(),
+                "rapid_fire" => universe.settings.rapid_fire.is_none(),
                 "deuterium_save_factor" => universe.settings.deuterium_save_factor.is_none(),
                 _ => false,
             };
@@ -1157,6 +1166,33 @@ fn assessment_limitations(
     candidate: &Candidate,
     universe: &PinnedUniverse,
 ) -> Vec<AssessmentLimitation> {
+    let mut limitations = Vec::new();
+    for field in ["debris_fleet", "debris_defence", "debris_deuterium"] {
+        let missing = match field {
+            "debris_fleet" => universe.settings.debris_fleet.is_none(),
+            "debris_defence" => universe.settings.debris_defence.is_none(),
+            "debris_deuterium" => universe.settings.debris_deuterium.is_none(),
+            _ => false,
+        };
+        if missing {
+            for metric in [
+                "generated_debris",
+                "moon_chance",
+                "recyclers_needed",
+                "attacker_profit",
+                "defender_profit",
+            ] {
+                limitations.push(AssessmentLimitation {
+                    metric: metric.to_owned(),
+                    location: format!("universe.settings.{field}"),
+                    explanation: format!(
+                        "the battle-time {field} setting is unknown; {metric} cannot be assessed"
+                    ),
+                    affects_execution: false,
+                });
+            }
+        }
+    }
     let current_snapshot_predates_report = universe.current == Some(true)
         && universe.acknowledged_current == Some(true)
         && candidate
@@ -1165,15 +1201,16 @@ fn assessment_limitations(
             .zip(universe.source_timestamp)
             .is_none_or(|(event, source)| event < source);
     if !current_snapshot_predates_report {
-        return Vec::new();
+        return limitations;
     }
 
-    vec![AssessmentLimitation {
+    limitations.push(AssessmentLimitation {
         metric: "generated_debris".to_owned(),
         location: "universe.settings.debris_fleet".to_owned(),
         explanation: "the acknowledged current universe snapshot is not historical proof for the report event; generated debris cannot be assessed against the battle-time debris rules".to_owned(),
         affects_execution: false,
-    }]
+    });
+    limitations
 }
 
 fn player_class(value: u8) -> PlayerClass {

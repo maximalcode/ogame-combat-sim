@@ -75,7 +75,7 @@ fn report_complete_renders_the_shared_library_result() {
         }},
         "universe": {"community":"en","universe":1,
             "settings":{"galaxies":9,"systems":499,"donut_galaxy":true,"donut_systems":true,"fleet_speed":1,
-                "debris_fleet":30,"debris_defence":0,"debris_deuterium":false,"deuterium_save_factor":0},
+                "rapid_fire":true,"debris_fleet":30,"debris_defence":0,"debris_deuterium":false,"deuterium_save_factor":0},
             "source":"public_metadata","source_timestamp":1_700_000_100,"source_version":"13.0.1",
             "current":false,"acknowledged_current":false}
     });
@@ -153,7 +153,7 @@ fn report_complete_renders_all_field_issues_from_the_shared_result() {
     assert!(stdout.contains("attackers"));
     assert!(stdout.contains("defenders"));
     assert!(stdout.contains("universe.settings.galaxies"));
-    assert!(stdout.contains("universe.settings.debris_deuterium"));
+    assert!(stdout.contains("universe.settings.rapid_fire"));
     assert!(stdout.contains("universe.settings.deuterium_save_factor"));
 }
 
@@ -188,7 +188,7 @@ fn report_complete_rejects_partial_lifeform_entries_at_the_cli_boundary() {
         }},
         "universe": {"community":"en","universe":1,
             "settings":{"galaxies":9,"systems":499,"donut_galaxy":true,"donut_systems":true,"fleet_speed":1,
-                "debris_fleet":30,"debris_defence":0,"debris_deuterium":false,"deuterium_save_factor":0},
+                "rapid_fire":true,"debris_fleet":30,"debris_defence":0,"debris_deuterium":false,"deuterium_save_factor":0},
             "source":"public_metadata","source_timestamp":1_700_000_100,"source_version":"13.0.1",
             "current":false,"acknowledged_current":false}
     });
