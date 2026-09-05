@@ -536,6 +536,62 @@ fn acknowledged_current_settings_remain_verified_when_rapid_fire_cannot_affect_c
 }
 
 #[test]
+fn absent_historical_rapid_fire_is_verified_when_composition_cannot_use_it() {
+    let mut pinned = universe();
+    pinned.settings.rapid_fire = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("irrelevant absent rapid-fire metadata must not block completion");
+    };
+    assert!(!input.request.use_rapid_fire);
+    assert!(input.evidence.fields["universe"].value["settings"]["rapid_fire"].is_null());
+}
+
+#[test]
+fn absent_historical_rapid_fire_blocks_relevant_composition_without_evidence() {
+    let mut pinned = universe();
+    pinned.settings.rapid_fire = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("relevant absent rapid-fire metadata must block completion");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.rapid_fire"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+}
+
+#[test]
+fn explicit_historical_rapid_fire_completes_relevant_composition_without_pinned_value() {
+    let mut pinned = universe();
+    pinned.settings.rapid_fire = None;
+    let mut completion_evidence = evidence();
+    completion_evidence.historical_rapid_fire = Some(false);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: completion_evidence,
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("explicit historical rapid-fire evidence should complete without a pin");
+    };
+    assert!(!input.request.use_rapid_fire);
+    assert!(input.evidence.fields["universe"].value["settings"]["rapid_fire"].is_null());
+    assert_eq!(
+        input.evidence.fields["universe.settings.rapid_fire.historical"].value,
+        serde_json::json!(false)
+    );
+}
+
+#[test]
 fn acknowledged_current_zero_debris_rates_do_not_prove_historical_zero_rates() {
     let mut pinned = universe();
     pinned.current = Some(true);
@@ -1294,7 +1350,6 @@ fn every_missing_universe_setting_has_a_targeted_issue() {
         "donut_galaxy",
         "donut_systems",
         "fleet_speed",
-        "rapid_fire",
         "deuterium_save_factor",
     ] {
         assert!(

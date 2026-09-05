@@ -152,7 +152,7 @@ pub struct PinnedUniverseSettings {
 }
 
 impl PinnedUniverseSettings {
-    fn resolve(&self) -> Result<(UniverseSettings, bool), Vec<&'static str>> {
+    fn resolve(&self) -> Result<(UniverseSettings, Option<bool>), Vec<&'static str>> {
         let mut missing = Vec::new();
         for (name, present) in [
             ("galaxies", self.galaxies.is_some()),
@@ -160,7 +160,6 @@ impl PinnedUniverseSettings {
             ("donut_galaxy", self.donut_galaxy.is_some()),
             ("donut_systems", self.donut_systems.is_some()),
             ("fleet_speed", self.fleet_speed.is_some()),
-            ("rapid_fire", self.rapid_fire.is_some()),
             (
                 "deuterium_save_factor",
                 self.deuterium_save_factor.is_some(),
@@ -218,7 +217,7 @@ impl PinnedUniverseSettings {
             debris_deuterium: self.debris_deuterium.unwrap_or(false),
             deuterium_save_factor: self.deuterium_save_factor.expect("checked above"),
         };
-        Ok((settings, self.rapid_fire.expect("checked above")))
+        Ok((settings, self.rapid_fire))
     }
 }
 
@@ -1107,7 +1106,6 @@ fn validate_universe(
                 "donut_galaxy" => universe.settings.donut_galaxy.is_none(),
                 "donut_systems" => universe.settings.donut_systems.is_none(),
                 "fleet_speed" => universe.settings.fleet_speed.is_none(),
-                "rapid_fire" => universe.settings.rapid_fire.is_none(),
                 "deuterium_save_factor" => universe.settings.deuterium_save_factor.is_none(),
                 _ => false,
             };
@@ -1192,13 +1190,18 @@ fn resolve_rapid_fire(
     completion_evidence: &CompletionEvidence,
     attacker: &PartyData,
     defender: &PartyData,
-    pinned_rapid_fire: bool,
+    pinned_rapid_fire: Option<bool>,
     issues: &mut Vec<FieldIssue>,
     ledger: &mut EvidenceLedger,
 ) -> bool {
     let supplied = completion_evidence.historical_rapid_fire;
     if let Some(value) = supplied {
-        if universe.current == Some(false) && universe.settings.rapid_fire != Some(value) {
+        if universe.current == Some(false)
+            && universe
+                .settings
+                .rapid_fire
+                .is_some_and(|pinned| pinned != value)
+        {
             contradiction(issues, "universe.settings.rapid_fire");
         } else {
             ledger.supplied(
@@ -1209,12 +1212,19 @@ fn resolve_rapid_fire(
         }
     }
 
+    let rapid_fire_applies = rapid_fire_can_affect(attacker, defender);
     // An acknowledged current snapshot is still only a current snapshot. Its
     // source timestamp does not establish that the setting remained unchanged
     // through the report event, in either timestamp ordering.
-    if acknowledged_current_snapshot_is_not_historical(universe)
-        && rapid_fire_can_affect(attacker, defender)
-    {
+    if pinned_rapid_fire.is_none() && rapid_fire_applies {
+        issue(
+            issues,
+            FieldIssueKind::Missing,
+            "universe.settings.rapid_fire",
+            "the historical rapid-fire setting is required for this battle's execution",
+            "supply a pinned or explicit historical rapid-fire value for the report event",
+        );
+    } else if acknowledged_current_snapshot_is_not_historical(universe) && rapid_fire_applies {
         issue(
             issues,
             FieldIssueKind::Missing,
@@ -1223,7 +1233,7 @@ fn resolve_rapid_fire(
             "supply explicit historical rapid-fire evidence for the report event",
         );
     }
-    pinned_rapid_fire
+    pinned_rapid_fire.unwrap_or(false)
 }
 
 fn rapid_fire_can_affect(attacker: &PartyData, defender: &PartyData) -> bool {

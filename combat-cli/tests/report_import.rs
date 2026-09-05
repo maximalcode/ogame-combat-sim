@@ -200,7 +200,6 @@ fn report_complete_renders_all_field_issues_from_the_shared_result() {
     assert!(stdout.contains("attackers"));
     assert!(stdout.contains("defenders"));
     assert!(stdout.contains("universe.settings.galaxies"));
-    assert!(stdout.contains("universe.settings.rapid_fire"));
     assert!(stdout.contains("universe.settings.deuterium_save_factor"));
 }
 
