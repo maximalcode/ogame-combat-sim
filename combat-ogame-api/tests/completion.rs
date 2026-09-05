@@ -257,6 +257,114 @@ fn already_effective_technology_is_used_directly_and_lifeform_units_are_explicit
 }
 
 #[test]
+fn negative_lifeform_combat_percentages_are_rejected_per_stat() {
+    let mut evidence = evidence();
+    evidence
+        .participants
+        .get_mut("A1")
+        .unwrap()
+        .lifeform
+        .as_mut()
+        .unwrap()
+        .insert(
+            204,
+            combat_types::LifeformBonus {
+                weapon: -500.0,
+                shield: -500.0,
+                armour: -500.0,
+                ..Default::default()
+            },
+        );
+
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("negative lifeform combat percentages must not produce a request");
+    };
+    for stat in ["weapon", "shield", "armour"] {
+        assert!(issues.iter().any(|issue| {
+            issue.location == format!("A1.lifeform.204.{stat}")
+                && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unsupported
+        }));
+    }
+    assert_eq!(
+        issues
+            .iter()
+            .filter(|issue| issue.location.starts_with("A1.lifeform.204."))
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn nonfinite_lifeform_combat_percentages_are_rejected_for_library_callers() {
+    let mut evidence = evidence();
+    evidence
+        .participants
+        .get_mut("A1")
+        .unwrap()
+        .lifeform
+        .as_mut()
+        .unwrap()
+        .insert(
+            204,
+            combat_types::LifeformBonus {
+                weapon: f32::NAN,
+                shield: f32::INFINITY,
+                armour: f32::NEG_INFINITY,
+                cargo: f32::NAN,
+                speed: f32::INFINITY,
+            },
+        );
+
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("nonfinite lifeform combat percentages must not produce a request");
+    };
+    for stat in ["weapon", "shield", "armour", "cargo", "speed"] {
+        assert!(issues.iter().any(|issue| {
+            issue.location == format!("A1.lifeform.204.{stat}")
+                && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unsupported
+        }));
+    }
+}
+
+#[test]
+fn finite_lifeform_percentages_that_overflow_starting_stats_are_rejected() {
+    let mut evidence = evidence();
+    evidence
+        .participants
+        .get_mut("A1")
+        .unwrap()
+        .lifeform
+        .as_mut()
+        .unwrap()
+        .insert(204, combat_types::LifeformBonus::uniform(f32::MAX));
+
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("overflowing starting combat stats must not produce a request");
+    };
+    for stat in ["weapon", "armour"] {
+        assert!(issues.iter().any(|issue| {
+            issue.location == format!("A1.lifeform.204.{stat}")
+                && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unsupported
+        }));
+    }
+}
+
+#[test]
 fn omitted_lifeform_evidence_stays_unknown_even_when_other_evidence_exists() {
     let mut value = serde_json::to_value(evidence()).unwrap();
     let participants = value["participants"].as_object_mut().unwrap();

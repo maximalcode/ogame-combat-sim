@@ -490,6 +490,7 @@ fn resolve_participant(
                     "remove it or supply a bonus for a supported entity",
                 );
             }
+            validate_lifeform_percentages(*bonus, &format!("{location}.lifeform.{entity}"), issues);
             ledger.supplied(
                 format!("{location}.lifeform.{entity}"),
                 serde_json::to_value(bonus).unwrap_or(Value::Null),
@@ -510,6 +511,7 @@ fn resolve_participant(
             .or_else(|| supplied.and_then(|e| e.entities.as_ref())),
         technology.as_ref(),
     ) {
+        validate_starting_stats(participant, composition, technology, &lifeform, issues);
         validate_reported_stats(participant, composition, technology, &lifeform, issues);
     }
 
@@ -537,6 +539,83 @@ fn record_report_evidence(participant: &Participant, location: &str, ledger: &mu
             boosters.clone(),
         );
     }
+}
+
+fn validate_lifeform_percentages(
+    bonus: LifeformBonus,
+    location: &str,
+    issues: &mut Vec<FieldIssue>,
+) {
+    for (field, value) in [
+        ("weapon", bonus.weapon),
+        ("shield", bonus.shield),
+        ("armour", bonus.armour),
+        ("cargo", bonus.cargo),
+        ("speed", bonus.speed),
+    ] {
+        if !valid_lifeform_percentage(value) {
+            issue(
+                issues,
+                FieldIssueKind::Unsupported,
+                format!("{location}.{field}"),
+                format!("lifeform {field} percentage must be finite and non-negative, got {value}"),
+                format!("supply a finite non-negative lifeform {field} percentage"),
+            );
+        }
+    }
+}
+
+fn validate_starting_stats(
+    participant: &Participant,
+    composition: &Composition,
+    technology: &Technology,
+    lifeform: &LifeformBonuses,
+    issues: &mut Vec<FieldIssue>,
+) {
+    let database = entity_stats();
+    for &entity in composition.keys() {
+        let Some(base) = database.get(&entity) else {
+            continue;
+        };
+        let bonus = lifeform.get(entity);
+        let modified = ModifiedStats::calculate(base, technology, bonus);
+        let raw_weapon = f64::from(base.weapon)
+            * (1.0 + (f64::from(technology.weapon) * 0.1) + (f64::from(bonus.weapon) / 100.0));
+        for (field, valid) in [
+            (
+                "weapon",
+                !valid_lifeform_percentage(bonus.weapon)
+                    || (raw_weapon.is_finite()
+                        && (0.0..=f64::from(u32::MAX)).contains(&raw_weapon)),
+            ),
+            (
+                "shield",
+                !valid_lifeform_percentage(bonus.shield)
+                    || (modified.shield.is_finite() && modified.shield >= 0.0),
+            ),
+            (
+                "armour",
+                !valid_lifeform_percentage(bonus.armour)
+                    || (modified.hull.is_finite() && modified.hull >= 0.0),
+            ),
+        ] {
+            if !valid {
+                issue(
+                    issues,
+                    FieldIssueKind::Unsupported,
+                    format!("{}.lifeform.{}.{}", participant.slot, entity, field),
+                    format!(
+                        "the supplied lifeform percentage produces an invalid starting {field} statistic"
+                    ),
+                    "supply a finite percentage that keeps the starting combat statistic representable",
+                );
+            }
+        }
+    }
+}
+
+fn valid_lifeform_percentage(value: f32) -> bool {
+    value.is_finite() && value >= 0.0
 }
 
 // Keep the evidence reconciliation together so basis checks and the

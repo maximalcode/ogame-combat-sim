@@ -75,6 +75,11 @@ evidence must include a `lifeform` object even when it is `{}`: an omitted or
 battle provenance and universe snapshot provenance in a separate evidence
 ledger, while the observed outcome stays outside the `CombatRequest`.
 
+Supplied lifeform percentages must be finite and non-negative. Completion also
+checks that the resulting weapon, shield, and armour starting statistics remain
+valid for the simulator's numeric representation; it does not impose a
+game-specific maximum where none is established.
+
 ## Validation
 
 Normal Rust tests are offline: synthetic schema examples test parsing and
