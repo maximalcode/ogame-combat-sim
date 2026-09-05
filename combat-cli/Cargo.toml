@@ -25,4 +25,5 @@ combat-ogame-api = { path = "../combat-ogame-api", version = "0.1.0" }
 tokio = { workspace = true }
 clap = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 serde_path_to_error = { workspace = true }

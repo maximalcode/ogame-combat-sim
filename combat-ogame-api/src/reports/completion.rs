@@ -127,6 +127,11 @@ pub struct PartialLifeformBonus {
 pub struct CompletionEvidence {
     #[serde(default)]
     pub participants: BTreeMap<String, ParticipantEvidence>,
+    /// Explicit battle-time rapid-fire evidence. This is kept separate from
+    /// the pinned universe snapshot because a current snapshot is not
+    /// historical proof for an older report.
+    #[serde(default)]
+    pub historical_rapid_fire: Option<bool>,
 }
 
 /// Every universe field is optional at the artifact boundary.  This prevents
@@ -139,6 +144,7 @@ pub struct PinnedUniverseSettings {
     pub donut_galaxy: Option<bool>,
     pub donut_systems: Option<bool>,
     pub fleet_speed: Option<u8>,
+    pub rapid_fire: Option<bool>,
     pub debris_fleet: Option<u8>,
     pub debris_defence: Option<u8>,
     pub debris_deuterium: Option<bool>,
@@ -146,7 +152,7 @@ pub struct PinnedUniverseSettings {
 }
 
 impl PinnedUniverseSettings {
-    fn resolve(&self) -> Result<UniverseSettings, Vec<&'static str>> {
+    fn resolve(&self) -> Result<(UniverseSettings, Option<bool>), Vec<&'static str>> {
         let mut missing = Vec::new();
         for (name, present) in [
             ("galaxies", self.galaxies.is_some()),
@@ -154,9 +160,6 @@ impl PinnedUniverseSettings {
             ("donut_galaxy", self.donut_galaxy.is_some()),
             ("donut_systems", self.donut_systems.is_some()),
             ("fleet_speed", self.fleet_speed.is_some()),
-            ("debris_fleet", self.debris_fleet.is_some()),
-            ("debris_defence", self.debris_defence.is_some()),
-            ("debris_deuterium", self.debris_deuterium.is_some()),
             (
                 "deuterium_save_factor",
                 self.deuterium_save_factor.is_some(),
@@ -198,12 +201,23 @@ impl PinnedUniverseSettings {
             donut_galaxy: self.donut_galaxy.expect("checked above"),
             donut_systems: self.donut_systems.expect("checked above"),
             fleet_speed: self.fleet_speed.expect("checked above"),
-            debris_fleet: self.debris_fleet.expect("checked above"),
-            debris_defence: self.debris_defence.expect("checked above"),
-            debris_deuterium: self.debris_deuterium.expect("checked above"),
+            // Debris rates affect derived output, not combat rounds. Unknown
+            // rates use the engine's required scalar representation only so a
+            // battle can execute; the missing facts remain visible in the
+            // assessment limitations below.
+            debris_fleet: self
+                .debris_fleet
+                .unwrap_or_else(|| UniverseSettings::default().debris_fleet),
+            debris_defence: self
+                .debris_defence
+                .unwrap_or_else(|| UniverseSettings::default().debris_defence),
+            // Deuterium debris changes derived output only. Keep execution
+            // complete with the engine's neutral value and retain the missing
+            // fact as an assessment limitation below.
+            debris_deuterium: self.debris_deuterium.unwrap_or(false),
             deuterium_save_factor: self.deuterium_save_factor.expect("checked above"),
         };
-        Ok(settings)
+        Ok((settings, self.rapid_fire))
     }
 }
 
@@ -273,6 +287,21 @@ pub struct VerifiedBattleInput {
     pub request: CombatRequest,
     pub evidence: EvidenceLedger,
     pub observed: Option<Value>,
+    /// Output metrics whose historical basis is unavailable even though the
+    /// request can still execute with the acknowledged current snapshot.
+    #[serde(default)]
+    pub assessment_limitations: Vec<AssessmentLimitation>,
+}
+
+/// A structured downstream assessment limitation. Completion does not run a
+/// comparison engine, but it preserves whether an unresolved historical value
+/// blocks execution or only one output metric.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AssessmentLimitation {
+    pub metric: String,
+    pub location: String,
+    pub explanation: String,
+    pub affects_execution: bool,
 }
 
 /// Completion always has one of these two machine-readable outcomes.
@@ -285,6 +314,10 @@ pub enum CompletionResult {
 
 /// Complete one combat candidate entirely offline.
 #[must_use]
+// This workflow deliberately keeps validation, evidence reconciliation, and
+// request construction together so a verified request cannot bypass one of
+// the fail-closed completion checks.
+#[allow(clippy::too_many_lines)]
 pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
     let candidate = &input.candidate;
     let mut issues = Vec::new();
@@ -357,16 +390,29 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
     if !issues.is_empty() {
         return CompletionResult::Incomplete { issues };
     }
-    let (Some(attacker), Some(defender), Ok(settings)) =
+    let (Some(attacker), Some(defender), Ok((settings, pinned_rapid_fire))) =
         (attacker, defender, input.universe.settings.resolve())
     else {
         return CompletionResult::Incomplete { issues };
     };
+    let rapid_fire = resolve_rapid_fire(
+        &input.universe,
+        &input.evidence,
+        &attacker.party,
+        &defender.party,
+        pinned_rapid_fire,
+        &mut issues,
+        &mut evidence,
+    );
+    if !issues.is_empty() {
+        return CompletionResult::Incomplete { issues };
+    }
 
     let request = CombatRequest {
         attacker: attacker.party,
         defender: defender.party,
         universe_settings: Some(settings),
+        use_rapid_fire: rapid_fire,
         simulations: 1,
         planet_resources: None,
         plunder_percentage: candidate.loot_percentage.unwrap_or(50),
@@ -381,11 +427,13 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         "universe",
         serde_json::to_value(&input.universe).unwrap_or(Value::Null),
     );
+    let assessment_limitations = assessment_limitations(&input.universe, &request);
     CompletionResult::Verified {
         input: Box::new(VerifiedBattleInput {
             request,
             evidence,
             observed: candidate.observed.clone(),
+            assessment_limitations,
         }),
     }
 }
@@ -1058,9 +1106,6 @@ fn validate_universe(
                 "donut_galaxy" => universe.settings.donut_galaxy.is_none(),
                 "donut_systems" => universe.settings.donut_systems.is_none(),
                 "fleet_speed" => universe.settings.fleet_speed.is_none(),
-                "debris_fleet" => universe.settings.debris_fleet.is_none(),
-                "debris_defence" => universe.settings.debris_defence.is_none(),
-                "debris_deuterium" => universe.settings.debris_deuterium.is_none(),
                 "deuterium_save_factor" => universe.settings.deuterium_save_factor.is_none(),
                 _ => false,
             };
@@ -1090,7 +1135,7 @@ fn validate_universe(
             "supply the public snapshot timestamp and game version",
         );
     }
-    if universe.current.is_none() && universe.acknowledged_current != Some(true) {
+    if universe.current.is_none() {
         issue(
             issues,
             FieldIssueKind::Missing,
@@ -1134,6 +1179,210 @@ fn validate_universe(
             Value::from(version.clone()),
         );
     }
+}
+
+// These inputs stay separate because the resolver must compare report facts,
+// pinned metadata, and supplied battle-time evidence before returning a
+// request value or recording it in the ledger.
+#[allow(clippy::too_many_arguments)]
+fn resolve_rapid_fire(
+    universe: &PinnedUniverse,
+    completion_evidence: &CompletionEvidence,
+    attacker: &PartyData,
+    defender: &PartyData,
+    pinned_rapid_fire: Option<bool>,
+    issues: &mut Vec<FieldIssue>,
+    ledger: &mut EvidenceLedger,
+) -> bool {
+    let supplied = completion_evidence.historical_rapid_fire;
+    if let Some(value) = supplied {
+        if universe.current == Some(false)
+            && universe
+                .settings
+                .rapid_fire
+                .is_some_and(|pinned| pinned != value)
+        {
+            contradiction(issues, "universe.settings.rapid_fire");
+        } else {
+            ledger.supplied(
+                "universe.settings.rapid_fire.historical",
+                Value::from(value),
+            );
+            return value;
+        }
+    }
+
+    let rapid_fire_applies = rapid_fire_can_affect(attacker, defender);
+    // An acknowledged current snapshot is still only a current snapshot. Its
+    // source timestamp does not establish that the setting remained unchanged
+    // through the report event, in either timestamp ordering.
+    if pinned_rapid_fire.is_none() && rapid_fire_applies {
+        issue(
+            issues,
+            FieldIssueKind::Missing,
+            "universe.settings.rapid_fire",
+            "the historical rapid-fire setting is required for this battle's execution",
+            "supply a pinned or explicit historical rapid-fire value for the report event",
+        );
+    } else if acknowledged_current_snapshot_is_not_historical(universe) && rapid_fire_applies {
+        issue(
+            issues,
+            FieldIssueKind::Missing,
+            "universe.settings.rapid_fire",
+            "the acknowledged current rapid-fire setting is not historical proof for this battle's execution",
+            "supply explicit historical rapid-fire evidence for the report event",
+        );
+    }
+    pinned_rapid_fire.unwrap_or(false)
+}
+
+fn rapid_fire_can_affect(attacker: &PartyData, defender: &PartyData) -> bool {
+    rapid_fire_from_side_can_affect(&attacker.entities, &defender.entities)
+        || rapid_fire_from_side_can_affect(&defender.entities, &attacker.entities)
+}
+
+fn rapid_fire_from_side_can_affect(
+    attackers: &combat_types::FleetComposition,
+    defenders: &combat_types::FleetComposition,
+) -> bool {
+    attackers.iter().any(|(&attacker, &count)| {
+        count > 0
+            && entity_stats().get(&attacker).is_some_and(|stats| {
+                stats
+                    .rapid_fire_against
+                    .keys()
+                    .any(|target| defenders.get(target).is_some_and(|count| *count > 0))
+            })
+    })
+}
+
+fn assessment_limitations(
+    universe: &PinnedUniverse,
+    request: &CombatRequest,
+) -> Vec<AssessmentLimitation> {
+    let mut limitations = Vec::new();
+    for field in ["debris_fleet", "debris_defence", "debris_deuterium"] {
+        if !debris_setting_applies(field, request, &universe.settings, false) {
+            continue;
+        }
+        let missing = match field {
+            "debris_fleet" => universe.settings.debris_fleet.is_none(),
+            "debris_defence" => universe.settings.debris_defence.is_none(),
+            "debris_deuterium" => universe.settings.debris_deuterium.is_none(),
+            _ => false,
+        };
+        if missing {
+            for metric in [
+                "generated_debris",
+                "moon_chance",
+                "recyclers_needed",
+                "attacker_profit",
+                "defender_profit",
+            ] {
+                limitations.push(AssessmentLimitation {
+                    metric: metric.to_owned(),
+                    location: format!("universe.settings.{field}"),
+                    explanation: format!(
+                        "the battle-time {field} setting is unknown; {metric} cannot be assessed"
+                    ),
+                    affects_execution: false,
+                });
+            }
+        }
+    }
+    if !acknowledged_current_snapshot_is_not_historical(universe) {
+        return limitations;
+    }
+
+    let Some(field) = ["debris_fleet", "debris_defence", "debris_deuterium"]
+        .into_iter()
+        .find(|field| debris_setting_applies(field, request, &universe.settings, true))
+    else {
+        return limitations;
+    };
+    for metric in [
+        "generated_debris",
+        "moon_chance",
+        "recyclers_needed",
+        "attacker_profit",
+        "defender_profit",
+    ] {
+        limitations.push(AssessmentLimitation {
+            metric: metric.to_owned(),
+            location: format!("universe.settings.{field}"),
+            explanation: format!(
+                "the acknowledged current universe snapshot is not historical proof for the report event; {metric} cannot be assessed against the battle-time debris rules"
+            ),
+            affects_execution: false,
+        });
+    }
+    limitations
+}
+
+fn acknowledged_current_snapshot_is_not_historical(universe: &PinnedUniverse) -> bool {
+    universe.current == Some(true) && universe.acknowledged_current == Some(true)
+}
+
+/// Return whether an unknown debris setting can affect a modeled output for
+/// the completed composition.  The optional rate is deliberately treated as
+/// potentially non-zero when it is unknown; only a known zero rate proves that
+/// a deuterium switch cannot contribute through that side of the battle.
+fn debris_setting_applies(
+    field: &str,
+    request: &CombatRequest,
+    settings: &PinnedUniverseSettings,
+    historical_unknown: bool,
+) -> bool {
+    match field {
+        "debris_fleet" => {
+            request
+                .attacker
+                .entities
+                .iter()
+                .any(|(&entity, &count)| count > 0 && entity < 400)
+                || request
+                    .defender
+                    .entities
+                    .iter()
+                    .any(|(&entity, &count)| count > 0 && entity < 400)
+        }
+        "debris_defence" => request
+            .defender
+            .entities
+            .iter()
+            .any(|(&entity, &count)| count > 0 && (400..500).contains(&entity)),
+        "debris_deuterium" => {
+            let fleet_rate = (!historical_unknown)
+                .then_some(settings.debris_fleet)
+                .flatten();
+            let defence_rate = (!historical_unknown)
+                .then_some(settings.debris_defence)
+                .flatten();
+            deuterium_cost_can_contribute(&request.attacker.entities, fleet_rate, false)
+                || deuterium_cost_can_contribute(&request.defender.entities, fleet_rate, false)
+                || deuterium_cost_can_contribute(&request.defender.entities, defence_rate, true)
+        }
+        _ => false,
+    }
+}
+
+fn deuterium_cost_can_contribute(
+    entities: &combat_types::FleetComposition,
+    applicable_rate: Option<u8>,
+    defences_only: bool,
+) -> bool {
+    entities.iter().any(|(&entity, &count)| {
+        count > 0
+            && if defences_only {
+                (400..500).contains(&entity)
+            } else {
+                entity < 400
+            }
+            && applicable_rate != Some(0)
+            && entity_stats()
+                .get(&entity)
+                .is_some_and(|stats| stats.cost_deuterium > 0)
+    })
 }
 
 fn player_class(value: u8) -> PlayerClass {

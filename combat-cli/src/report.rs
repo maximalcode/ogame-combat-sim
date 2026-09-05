@@ -1,7 +1,10 @@
 use crate::cli::ReportArgs;
 use combat_ogame_api::reports::{
-    CompletionInput, CompletionResult, ReportClient, ReportId, complete_candidate,
+    CompletionEvidence, CompletionInput, CompletionResult, PinnedUniverse, ReportClient, ReportId,
+    complete_candidate, resolve_current_universe,
 };
+use combat_ogame_api::{OGameClient, Universe};
+use serde::Deserialize;
 use std::fmt::Write as _;
 use std::io::Read;
 
@@ -46,11 +49,41 @@ pub fn complete(args: &ReportArgs) -> Result<String, String> {
     })?;
     let json = std::fs::read_to_string(path)
         .map_err(|_| "could not read completion artifact".to_owned())?;
-    let input: CompletionInput = serde_json::from_str(&json)
+    let artifact: CompletionArtifact = serde_json::from_str(&json)
         .map_err(|_| {
             "invalid completion artifact JSON; expected a sanitized candidate, evidence and pinned universe"
                 .to_owned()
         })?;
+    let universe = if args.resolve_current {
+        let universe_name = format!(
+            "s{}-{}",
+            artifact.candidate.provenance.universe, artifact.candidate.provenance.community
+        );
+        let universe = Universe::new(universe_name).map_err(|error| error.to_string())?;
+        let client =
+            OGameClient::new(universe, &args.cache_dir).map_err(|error| error.to_string())?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| "could not start the public metadata client".to_owned())?;
+        let mut pinned = runtime
+            .block_on(resolve_current_universe(&artifact.candidate, &client))
+            .map_err(|error| error.to_string())?;
+        if args.acknowledge_current {
+            pinned.acknowledged_current = Some(true);
+        }
+        pinned
+    } else {
+        artifact.universe.ok_or_else(|| {
+            "completion artifact has no pinned universe; supply one or use --resolve-current"
+                .to_owned()
+        })?
+    };
+    let input = CompletionInput {
+        candidate: artifact.candidate,
+        evidence: artifact.evidence,
+        universe,
+    };
     let result = complete_candidate(&input);
     let machine = serde_json::to_string_pretty(&result)
         .map_err(|_| "could not serialize completion result".to_owned())?;
@@ -88,4 +121,16 @@ pub fn complete(args: &ReportArgs) -> Result<String, String> {
     output.push_str(&machine);
     output.push('\n');
     Ok(output)
+}
+
+/// The CLI artifact keeps the universe optional only to support the explicit
+/// `--resolve-current` path. The library boundary remains `CompletionInput`,
+/// which always carries a pinned snapshot before simulation can start.
+#[derive(Debug, Deserialize)]
+struct CompletionArtifact {
+    candidate: combat_ogame_api::reports::Candidate,
+    #[serde(default)]
+    evidence: CompletionEvidence,
+    #[serde(default)]
+    universe: Option<PinnedUniverse>,
 }
