@@ -29,7 +29,7 @@ pub fn parse_report(id: &ReportId, json: &str) -> Result<Candidate, ReportError>
         schema_version: 1,
         report_kind: id.kind,
         provenance: Provenance {
-            source: "community_api_proxy",
+            source: "community_api_proxy".to_owned(),
             community: id.community.clone(),
             universe: id.universe,
             event_timestamp: number(generic, "event_timestamp", "provenance.event_timestamp")?,
@@ -164,7 +164,7 @@ fn espionage_technology(
     details: &Value,
 ) -> Result<TechnologyCandidate, ReportError> {
     let mut technology = TechnologyCandidate {
-        basis: "researched",
+        basis: "researched".to_owned(),
         ..Default::default()
     };
     if optional_bool(generic, "failed_research")? == Some(false) {
@@ -212,7 +212,7 @@ fn combat(data: &Value, generic: &Value, candidate: &mut Candidate) -> Result<()
                 .map(|v| composition(v, "ship_type", "count", field))
                 .transpose()?;
             let technology = TechnologyCandidate {
-                basis: "reported_combat_bonus_divided_by_ten",
+                basis: "reported_combat_bonus_divided_by_ten".to_owned(),
                 weapon: combat_level(participant, "fleet_weapon_percentage")?,
                 shield: combat_level(participant, "fleet_shield_percentage")?,
                 armour: combat_level(participant, "fleet_armor_percentage")?,

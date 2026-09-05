@@ -64,7 +64,15 @@ fn run(command: Command) -> Result<String, String> {
     match command {
         Command::Sim(args) => simulate(&args),
         Command::Entities => Ok(render::render_entities()),
-        Command::Report(args) => report::import(&args),
+        Command::Report(args) => {
+            if args.action.as_deref() == Some("complete") {
+                report::complete(&args)
+            } else if args.action.is_some() {
+                Err("unknown report action; use `report complete` or omit the action to import an ID".to_owned())
+            } else {
+                report::import(&args)
+            }
+        }
         Command::Fixture { action } => match action {
             FixtureCommand::Template => Ok(combat_fixtures::TEMPLATE.to_owned()),
             FixtureCommand::Check(args) => fixture::check(&args.paths),
