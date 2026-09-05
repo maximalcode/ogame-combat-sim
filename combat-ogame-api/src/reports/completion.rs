@@ -15,7 +15,7 @@ use combat_types::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// Where an accepted value came from.  These values are intentionally kept
 /// separate even when they happen to contain the same number.
@@ -494,7 +494,6 @@ fn resolve_participant(
         issues,
         ledger,
     );
-    let mut unresolved_lifeform_entities = BTreeSet::new();
     let lifeform = lifeform_evidence.map_or_else(LifeformBonuses::default, |evidence| {
         ledger.supplied(
             format!("{location}.lifeform"),
@@ -514,8 +513,6 @@ fn resolve_participant(
             let bonus_location = format!("{location}.lifeform.{entity}");
             if let Some(complete) = complete_lifeform_bonus(*bonus, &bonus_location, issues) {
                 resolved.insert(entity, complete);
-            } else {
-                unresolved_lifeform_entities.insert(entity);
             }
             ledger.supplied(
                 bonus_location,
@@ -538,16 +535,14 @@ fn resolve_participant(
             participant,
             composition,
             technology,
-            &lifeform,
-            &unresolved_lifeform_entities,
+            lifeform_evidence,
             issues,
         );
         validate_reported_stats(
             participant,
             composition,
             technology,
-            &lifeform,
-            &unresolved_lifeform_entities,
+            lifeform_evidence,
             issues,
         );
     }
@@ -643,40 +638,30 @@ fn validate_starting_stats(
     participant: &Participant,
     composition: &Composition,
     technology: &Technology,
-    lifeform: &LifeformBonuses,
-    unresolved_lifeform_entities: &BTreeSet<u16>,
+    lifeform_evidence: Option<&BTreeMap<u16, PartialLifeformBonus>>,
     issues: &mut Vec<FieldIssue>,
 ) {
     let database = entity_stats();
     for &entity in composition.keys() {
-        if unresolved_lifeform_entities.contains(&entity) {
-            continue;
-        }
         let Some(base) = database.get(&entity) else {
             continue;
         };
-        let bonus = lifeform.get(entity);
-        let modified = ModifiedStats::calculate(base, technology, bonus);
-        let raw_weapon = f64::from(base.weapon)
-            * (1.0 + (f64::from(technology.weapon) * 0.1) + (f64::from(bonus.weapon) / 100.0));
-        for (field, valid) in [
-            (
-                "weapon",
-                !valid_lifeform_percentage(bonus.weapon)
-                    || (raw_weapon.is_finite()
-                        && (0.0..=f64::from(u32::MAX)).contains(&raw_weapon)),
-            ),
-            (
-                "shield",
-                !valid_lifeform_percentage(bonus.shield)
-                    || (modified.shield.is_finite() && modified.shield >= 0.0),
-            ),
-            (
-                "armour",
-                !valid_lifeform_percentage(bonus.armour)
-                    || (modified.hull.is_finite() && modified.hull >= 0.0),
-            ),
-        ] {
+        for field in ["weapon", "shield", "armour"] {
+            let Some(bonus) = known_lifeform_percentage(lifeform_evidence, entity, field) else {
+                continue;
+            };
+            let valid = match field {
+                "weapon" => {
+                    let raw_weapon = f64::from(base.weapon)
+                        * (1.0 + (f64::from(technology.weapon) * 0.1) + (f64::from(bonus) / 100.0));
+                    raw_weapon.is_finite() && (0.0..=f64::from(u32::MAX)).contains(&raw_weapon)
+                }
+                "shield" | "armour" => {
+                    let modified = modified_stat(base, technology, field, bonus);
+                    modified.is_finite() && modified >= 0.0
+                }
+                _ => unreachable!("only combat stats are validated"),
+            };
             if !valid {
                 issue(
                     issues,
@@ -908,8 +893,7 @@ fn validate_reported_stats(
     participant: &Participant,
     entities: &Composition,
     technology: &Technology,
-    lifeform: &LifeformBonuses,
-    unresolved_lifeform_entities: &BTreeSet<u16>,
+    lifeform_evidence: Option<&BTreeMap<u16, PartialLifeformBonus>>,
     issues: &mut Vec<FieldIssue>,
 ) {
     let Some(stats) = participant
@@ -926,24 +910,24 @@ fn validate_reported_stats(
     };
     let database = entity_stats();
     for &entity in entities.keys() {
-        if unresolved_lifeform_entities.contains(&entity) {
-            continue;
-        }
         let Some(reported) = stats.get(&entity.to_string()).and_then(Value::as_object) else {
             continue;
         };
         let Some(base) = database.get(&entity) else {
             continue;
         };
-        let actual = modified_stats(base, technology, lifeform.get(entity));
-        for (field, expected) in [
-            ("weapon", actual.weapon),
-            ("shield", actual.shield),
-            ("armor", actual.armour),
+        for (field, stat) in [
+            ("weapon", "weapon"),
+            ("shield", "shield"),
+            ("armor", "armour"),
         ] {
             let Some(value) = reported.get(field).and_then(Value::as_f64) else {
                 continue;
             };
+            let Some(bonus) = known_lifeform_percentage(lifeform_evidence, entity, stat) else {
+                continue;
+            };
+            let expected = modified_stat(base, technology, stat, bonus);
             if (value - expected).abs() > f64::EPSILON {
                 issue(
                     issues,
@@ -960,6 +944,28 @@ fn validate_reported_stats(
             }
         }
     }
+}
+
+/// Return a lifeform modifier only when the evidence establishes the value for
+/// this entity and stat. An explicitly supplied map establishes zero for an
+/// entity it does not name; an omitted map establishes nothing. Partial named
+/// entries remain unknown only for their omitted combat stats.
+fn known_lifeform_percentage(
+    lifeform_evidence: Option<&BTreeMap<u16, PartialLifeformBonus>>,
+    entity: u16,
+    field: &str,
+) -> Option<f32> {
+    let evidence = lifeform_evidence?;
+    let Some(bonus) = evidence.get(&entity) else {
+        return Some(0.0);
+    };
+    let value = match field {
+        "weapon" => bonus.weapon,
+        "shield" => bonus.shield,
+        "armour" => bonus.armour,
+        _ => unreachable!("only combat stats have lifeform modifiers"),
+    }?;
+    valid_lifeform_percentage(value).then_some(value)
 }
 
 fn validate_composition(composition: &Composition, location: &str, issues: &mut Vec<FieldIssue>) {
@@ -995,25 +1001,35 @@ fn validate_composition(composition: &Composition, location: &str, issues: &mut 
     }
 }
 
-#[derive(Clone, Copy)]
-struct StartingStats {
-    weapon: f64,
-    shield: f64,
-    armour: f64,
-}
-
-fn modified_stats(
+fn modified_stat(
     base: &EntityStats,
     technology: &Technology,
-    lifeform: LifeformBonus,
-) -> StartingStats {
+    field: &str,
+    lifeform_percentage: f32,
+) -> f64 {
+    let lifeform = match field {
+        "weapon" => LifeformBonus {
+            weapon: lifeform_percentage,
+            ..LifeformBonus::default()
+        },
+        "shield" => LifeformBonus {
+            shield: lifeform_percentage,
+            ..LifeformBonus::default()
+        },
+        "armour" => LifeformBonus {
+            armour: lifeform_percentage,
+            ..LifeformBonus::default()
+        },
+        _ => unreachable!("only combat stats are reconstructed"),
+    };
     let modified = ModifiedStats::calculate(base, technology, lifeform);
-    StartingStats {
-        weapon: f64::from(modified.weapon),
-        shield: f64::from(modified.shield),
+    match field {
+        "weapon" => f64::from(modified.weapon),
+        "shield" => f64::from(modified.shield),
         // Report `armor` is the combat hull value. The engine converts the
         // armour resource stat into hull points before flooring it.
-        armour: f64::from(modified.hull),
+        "armour" => f64::from(modified.hull),
+        _ => unreachable!("only combat stats are reconstructed"),
     }
 }
 

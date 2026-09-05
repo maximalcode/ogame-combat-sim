@@ -311,6 +311,84 @@ fn partial_lifeform_entries_report_each_missing_combat_percentage() {
 }
 
 #[test]
+fn known_stat_conflict_is_reported_when_another_stat_needs_lifeform_evidence() {
+    let mut evidence = evidence();
+    evidence.participants.get_mut("A1").unwrap().lifeform = Some(BTreeMap::from([(
+        204,
+        combat_ogame_api::reports::PartialLifeformBonus {
+            weapon: Some(50.0),
+            shield: None,
+            armour: None,
+            ..Default::default()
+        },
+    )]));
+
+    let mut report = participant("A1", Some(204));
+    report.reported_unit_stats = Some(serde_json::json!({
+        // Effective Weapons 13 plus the known +50% weapon bonus gives 140.
+        "204": {"weapon": 999, "shield": 28, "armor": 1120}
+    }));
+    let mut candidate = candidate(Some(204), Some(401));
+    candidate.attackers = vec![report];
+
+    let result = complete_candidate(&CompletionInput {
+        candidate,
+        evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("incomplete lifeform evidence must not produce a request");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "A1.lifeform.204.shield"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+    assert!(issues.iter().any(|issue| {
+        issue.location == "A1.lifeform.204.armour"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+    assert!(issues.iter().any(|issue| {
+        issue.location == "A1.reported_unit_stats.204.weapon"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::ReportStatMismatch
+    }));
+}
+
+#[test]
+fn omitted_lifeform_map_does_not_create_stat_mismatches_from_zero_bonus_guess() {
+    let mut report = participant("A1", Some(204));
+    report.reported_unit_stats = Some(serde_json::json!({
+        // Without a confirmed lifeform map, 140 cannot be compared with a
+        // guessed zero-bonus reconstruction of 115.
+        "204": {"weapon": 140}
+    }));
+    let mut candidate = candidate(Some(204), Some(401));
+    candidate.attackers = vec![report];
+    let mut completion_evidence = evidence();
+    completion_evidence
+        .participants
+        .get_mut("A1")
+        .unwrap()
+        .lifeform = None;
+
+    let result = complete_candidate(&CompletionInput {
+        candidate,
+        evidence: completion_evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("unknown lifeform evidence must not produce a request");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "A1.lifeform"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unknown
+    }));
+    assert!(!issues.iter().any(|issue| {
+        issue.location == "A1.reported_unit_stats.204.weapon"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::ReportStatMismatch
+    }));
+}
+
+#[test]
 fn null_lifeform_combat_percentages_are_missing_and_all_participant_issues_are_returned() {
     let mut evidence = evidence();
     evidence.participants.get_mut("A1").unwrap().lifeform = Some(BTreeMap::from([(
