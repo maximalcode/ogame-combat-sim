@@ -15,7 +15,7 @@ use combat_types::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Where an accepted value came from.  These values are intentionally kept
 /// separate even when they happen to contain the same number.
@@ -99,7 +99,26 @@ pub struct ParticipantEvidence {
     /// report did not establish the lifeform state; `Some(empty)` is an
     /// explicit confirmation that no lifeform modifiers apply.
     #[serde(default)]
-    pub lifeform: Option<BTreeMap<u16, LifeformBonus>>,
+    pub lifeform: Option<BTreeMap<u16, PartialLifeformBonus>>,
+}
+
+/// A lifeform bonus at the completion boundary. Combat percentages are
+/// required for each named entity, but remain optional here so omitted and
+/// `null` JSON values cannot become confirmed zeroes during deserialization.
+/// Cargo and speed are retained when supplied but are not required to build a
+/// combat request.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq)]
+pub struct PartialLifeformBonus {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weapon: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shield: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armour: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cargo: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f32>,
 }
 
 /// Evidence used to complete the candidate.  The map is keyed by the stable
@@ -475,11 +494,13 @@ fn resolve_participant(
         issues,
         ledger,
     );
+    let mut unresolved_lifeform_entities = BTreeSet::new();
     let lifeform = lifeform_evidence.map_or_else(LifeformBonuses::default, |evidence| {
         ledger.supplied(
             format!("{location}.lifeform"),
             serde_json::to_value(evidence).unwrap_or(Value::Null),
         );
+        let mut resolved = BTreeMap::new();
         for (&entity, bonus) in evidence {
             if !entity_stats().contains_key(&entity) {
                 issue(
@@ -490,16 +511,18 @@ fn resolve_participant(
                     "remove it or supply a bonus for a supported entity",
                 );
             }
-            validate_lifeform_percentages(*bonus, &format!("{location}.lifeform.{entity}"), issues);
+            let bonus_location = format!("{location}.lifeform.{entity}");
+            if let Some(complete) = complete_lifeform_bonus(*bonus, &bonus_location, issues) {
+                resolved.insert(entity, complete);
+            } else {
+                unresolved_lifeform_entities.insert(entity);
+            }
             ledger.supplied(
-                format!("{location}.lifeform.{entity}"),
+                bonus_location,
                 serde_json::to_value(bonus).unwrap_or(Value::Null),
             );
         }
-        evidence
-            .iter()
-            .map(|(&entity, &bonus)| (entity, bonus))
-            .collect()
+        resolved.into_iter().collect()
     });
 
     record_report_evidence(participant, &location, ledger);
@@ -511,8 +534,22 @@ fn resolve_participant(
             .or_else(|| supplied.and_then(|e| e.entities.as_ref())),
         technology.as_ref(),
     ) {
-        validate_starting_stats(participant, composition, technology, &lifeform, issues);
-        validate_reported_stats(participant, composition, technology, &lifeform, issues);
+        validate_starting_stats(
+            participant,
+            composition,
+            technology,
+            &lifeform,
+            &unresolved_lifeform_entities,
+            issues,
+        );
+        validate_reported_stats(
+            participant,
+            composition,
+            technology,
+            &lifeform,
+            &unresolved_lifeform_entities,
+            issues,
+        );
     }
 
     let party = match (entities, technology) {
@@ -541,19 +578,46 @@ fn record_report_evidence(participant: &Participant, location: &str, ledger: &mu
     }
 }
 
-fn validate_lifeform_percentages(
-    bonus: LifeformBonus,
+fn complete_lifeform_bonus(
+    bonus: PartialLifeformBonus,
     location: &str,
     issues: &mut Vec<FieldIssue>,
-) {
+) -> Option<LifeformBonus> {
+    let mut complete = true;
     for (field, value) in [
         ("weapon", bonus.weapon),
         ("shield", bonus.shield),
         ("armour", bonus.armour),
-        ("cargo", bonus.cargo),
-        ("speed", bonus.speed),
     ] {
-        if !valid_lifeform_percentage(value) {
+        match value {
+            None => {
+                complete = false;
+                issue(
+                    issues,
+                    FieldIssueKind::Missing,
+                    format!("{location}.{field}"),
+                    format!("lifeform {field} percentage is required for a named entity"),
+                    format!("supply the lifeform {field} percentage for this entity"),
+                );
+            }
+            Some(value) if !valid_lifeform_percentage(value) => {
+                complete = false;
+                issue(
+                    issues,
+                    FieldIssueKind::Unsupported,
+                    format!("{location}.{field}"),
+                    format!(
+                        "lifeform {field} percentage must be finite and non-negative, got {value}"
+                    ),
+                    format!("supply a finite non-negative lifeform {field} percentage"),
+                );
+            }
+            Some(_) => {}
+        }
+    }
+    for (field, value) in [("cargo", bonus.cargo), ("speed", bonus.speed)] {
+        if let Some(value) = value.filter(|value| !valid_lifeform_percentage(*value)) {
+            complete = false;
             issue(
                 issues,
                 FieldIssueKind::Unsupported,
@@ -563,6 +627,16 @@ fn validate_lifeform_percentages(
             );
         }
     }
+    if !complete {
+        return None;
+    }
+    Some(LifeformBonus {
+        weapon: bonus.weapon.expect("checked above"),
+        shield: bonus.shield.expect("checked above"),
+        armour: bonus.armour.expect("checked above"),
+        cargo: bonus.cargo.unwrap_or_default(),
+        speed: bonus.speed.unwrap_or_default(),
+    })
 }
 
 fn validate_starting_stats(
@@ -570,10 +644,14 @@ fn validate_starting_stats(
     composition: &Composition,
     technology: &Technology,
     lifeform: &LifeformBonuses,
+    unresolved_lifeform_entities: &BTreeSet<u16>,
     issues: &mut Vec<FieldIssue>,
 ) {
     let database = entity_stats();
     for &entity in composition.keys() {
+        if unresolved_lifeform_entities.contains(&entity) {
+            continue;
+        }
         let Some(base) = database.get(&entity) else {
             continue;
         };
@@ -831,6 +909,7 @@ fn validate_reported_stats(
     entities: &Composition,
     technology: &Technology,
     lifeform: &LifeformBonuses,
+    unresolved_lifeform_entities: &BTreeSet<u16>,
     issues: &mut Vec<FieldIssue>,
 ) {
     let Some(stats) = participant
@@ -847,6 +926,9 @@ fn validate_reported_stats(
     };
     let database = entity_stats();
     for &entity in entities.keys() {
+        if unresolved_lifeform_entities.contains(&entity) {
+            continue;
+        }
         let Some(reported) = stats.get(&entity.to_string()).and_then(Value::as_object) else {
             continue;
         };

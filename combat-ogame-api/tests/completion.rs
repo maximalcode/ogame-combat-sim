@@ -224,10 +224,10 @@ fn already_effective_technology_is_used_directly_and_lifeform_units_are_explicit
         .unwrap()
         .insert(
             204,
-            combat_types::LifeformBonus {
-                weapon: 50.0,
-                shield: 50.0,
-                armour: 50.0,
+            combat_ogame_api::reports::PartialLifeformBonus {
+                weapon: Some(50.0),
+                shield: Some(50.0),
+                armour: Some(50.0),
                 ..Default::default()
             },
         );
@@ -257,6 +257,150 @@ fn already_effective_technology_is_used_directly_and_lifeform_units_are_explicit
 }
 
 #[test]
+fn partial_lifeform_entries_report_each_missing_combat_percentage() {
+    let mut evidence = evidence();
+    let a1 = evidence.participants.get_mut("A1").unwrap();
+    let partial: serde_json::Value = serde_json::json!({
+        "204": { "weapon": 50.0 }
+    });
+    a1.lifeform = Some(serde_json::from_value(partial).unwrap());
+    a1.lifeform.as_mut().unwrap().insert(
+        206,
+        combat_ogame_api::reports::PartialLifeformBonus {
+            weapon: Some(0.0),
+            shield: Some(0.0),
+            armour: Some(0.0),
+            ..Default::default()
+        },
+    );
+
+    let mut candidate = candidate(Some(204), Some(401));
+    candidate.attackers[0].entities = Some(BTreeMap::from([(204, 20), (206, 1)]));
+    candidate.attackers[0].reported_unit_stats = Some(serde_json::json!({
+        "204": {"weapon": 140},
+        "206": {"weapon": 999}
+    }));
+    let result = complete_candidate(&CompletionInput {
+        candidate,
+        evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("partial lifeform combat evidence must not produce a request");
+    };
+
+    for stat in ["shield", "armour"] {
+        assert!(issues.iter().any(|issue| {
+            issue.location == format!("A1.lifeform.204.{stat}")
+                && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+        }));
+    }
+    assert!(!issues.iter().any(|issue| {
+        issue.location == "A1.lifeform.204.weapon"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+    assert!(!issues.iter().any(|issue| {
+        issue.location == "A1.reported_unit_stats.204.weapon"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::ReportStatMismatch
+    }));
+    assert!(issues.iter().any(|issue| {
+        issue.location == "A1.reported_unit_stats.206.weapon"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::ReportStatMismatch
+    }));
+    assert!(issues.iter().all(|issue| issue.location != "D1.lifeform"));
+}
+
+#[test]
+fn null_lifeform_combat_percentages_are_missing_and_all_participant_issues_are_returned() {
+    let mut evidence = evidence();
+    evidence.participants.get_mut("A1").unwrap().lifeform = Some(BTreeMap::from([(
+        204,
+        serde_json::from_value(serde_json::json!({
+            "weapon": 0.0,
+            "shield": null,
+            "armour": null
+        }))
+        .unwrap(),
+    )]));
+    evidence.participants.get_mut("D1").unwrap().lifeform = Some(BTreeMap::from([(
+        401,
+        serde_json::from_value(serde_json::json!({})).unwrap(),
+    )]));
+
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("incomplete lifeform entries must not produce a request");
+    };
+
+    for (slot, entity, stats) in [
+        ("A1", 204, ["shield", "armour"].as_slice()),
+        ("D1", 401, ["weapon", "shield", "armour"].as_slice()),
+    ] {
+        for stat in stats {
+            assert!(issues.iter().any(|issue| {
+                issue.location == format!("{slot}.lifeform.{entity}.{stat}")
+                    && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+            }));
+        }
+    }
+    assert_eq!(
+        issues
+            .iter()
+            .filter(|issue| issue.location.starts_with("A1.lifeform.204.")
+                || issue.location.starts_with("D1.lifeform.401."))
+            .count(),
+        5
+    );
+}
+
+#[test]
+fn explicit_zero_lifeform_combat_percentages_are_valid_without_inventing_cargo_or_speed() {
+    let mut evidence = evidence();
+    evidence.participants.get_mut("A1").unwrap().lifeform = Some(BTreeMap::from([(
+        204,
+        combat_ogame_api::reports::PartialLifeformBonus {
+            weapon: Some(0.0),
+            shield: Some(0.0),
+            armour: Some(0.0),
+            cargo: None,
+            speed: None,
+        },
+    )]));
+
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("complete explicit zero combat percentages should verify");
+    };
+    let bonus = input.request.attacker.lifeform.get(204);
+    for value in [
+        bonus.weapon,
+        bonus.shield,
+        bonus.armour,
+        bonus.cargo,
+        bonus.speed,
+    ] {
+        assert!(value.abs() < f32::EPSILON);
+    }
+    let evidence = &input.evidence.fields["A1.lifeform.204"].value;
+    assert_eq!(
+        evidence,
+        &serde_json::json!({
+            "weapon": 0.0,
+            "shield": 0.0,
+            "armour": 0.0
+        })
+    );
+}
+
+#[test]
 fn negative_lifeform_combat_percentages_are_rejected_per_stat() {
     let mut evidence = evidence();
     evidence
@@ -268,10 +412,10 @@ fn negative_lifeform_combat_percentages_are_rejected_per_stat() {
         .unwrap()
         .insert(
             204,
-            combat_types::LifeformBonus {
-                weapon: -500.0,
-                shield: -500.0,
-                armour: -500.0,
+            combat_ogame_api::reports::PartialLifeformBonus {
+                weapon: Some(-500.0),
+                shield: Some(-500.0),
+                armour: Some(-500.0),
                 ..Default::default()
             },
         );
@@ -311,12 +455,12 @@ fn nonfinite_lifeform_combat_percentages_are_rejected_for_library_callers() {
         .unwrap()
         .insert(
             204,
-            combat_types::LifeformBonus {
-                weapon: f32::NAN,
-                shield: f32::INFINITY,
-                armour: f32::NEG_INFINITY,
-                cargo: f32::NAN,
-                speed: f32::INFINITY,
+            combat_ogame_api::reports::PartialLifeformBonus {
+                weapon: Some(f32::NAN),
+                shield: Some(f32::INFINITY),
+                armour: Some(f32::NEG_INFINITY),
+                cargo: Some(f32::NAN),
+                speed: Some(f32::INFINITY),
             },
         );
 
@@ -346,7 +490,16 @@ fn finite_lifeform_percentages_that_overflow_starting_stats_are_rejected() {
         .lifeform
         .as_mut()
         .unwrap()
-        .insert(204, combat_types::LifeformBonus::uniform(f32::MAX));
+        .insert(
+            204,
+            combat_ogame_api::reports::PartialLifeformBonus {
+                weapon: Some(f32::MAX),
+                shield: Some(f32::MAX),
+                armour: Some(f32::MAX),
+                cargo: Some(f32::MAX),
+                speed: Some(f32::MAX),
+            },
+        );
 
     let result = complete_candidate(&CompletionInput {
         candidate: candidate(Some(204), Some(401)),

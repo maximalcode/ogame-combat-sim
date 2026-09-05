@@ -10,9 +10,9 @@ mod tests;
 pub use client::ReportClient;
 pub use completion::{
     CompletionEvidence, CompletionInput, CompletionResult, EvidenceLedger, EvidenceRecord,
-    EvidenceSource, FieldIssue, FieldIssueKind, ParticipantEvidence, PinnedUniverse,
-    PinnedUniverseSettings, TechnologyBasis, TechnologyEvidence, VerifiedBattleInput,
-    complete_candidate, complete_report,
+    EvidenceSource, FieldIssue, FieldIssueKind, PartialLifeformBonus, ParticipantEvidence,
+    PinnedUniverse, PinnedUniverseSettings, TechnologyBasis, TechnologyEvidence,
+    VerifiedBattleInput, complete_candidate, complete_report,
 };
 pub use model::{Candidate, Participant, Provenance, ResourcesCandidate, TechnologyCandidate};
 pub use parse::parse_report;

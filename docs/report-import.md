@@ -75,6 +75,14 @@ evidence must include a `lifeform` object even when it is `{}`: an omitted or
 battle provenance and universe snapshot provenance in a separate evidence
 ledger, while the observed outcome stays outside the `CombatRequest`.
 
+When a lifeform object names an entity, its `weapon`, `shield`, and `armour`
+percentages are required individually. An omitted or `null` combat percentage
+produces a targeted completion issue; it is never treated as an explicit zero.
+An empty entity object therefore remains incomplete, while the explicitly empty
+whole `lifeform` map confirms that no lifeform modifiers apply. Optional
+`cargo` and `speed` values are retained when supplied and are not invented
+when absent.
+
 Supplied lifeform percentages must be finite and non-negative. Completion also
 checks that the resulting weapon, shield, and armour starting statistics remain
 valid for the simulator's numeric representation; it does not impose a
