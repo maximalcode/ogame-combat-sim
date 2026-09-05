@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub type Composition = BTreeMap<u16, u32>;
 
 /// Sanitized review artifact, never implicitly converted into a simulation request.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Candidate {
     pub schema_version: u8,
     pub report_kind: super::ReportKind,
@@ -17,23 +17,23 @@ pub struct Candidate {
     pub review_required: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResourcesCandidate {
     pub metal: Option<u64>,
     pub crystal: Option<u64>,
     pub deuterium: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Provenance {
-    pub source: &'static str,
+    pub source: String,
     pub community: String,
     pub universe: u32,
     pub event_timestamp: Option<u64>,
     pub game_version: Option<String>,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Participant {
     pub slot: String,
     pub entities: Option<Composition>,
@@ -50,9 +50,9 @@ pub struct Participant {
 
 /// Unknown levels are null, never zero. Basis distinguishes research from
 /// combat-reported bonuses, whose class treatment needs explicit review.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct TechnologyCandidate {
-    pub basis: &'static str,
+    pub basis: String,
     pub weapon: Option<u8>,
     pub shield: Option<u8>,
     pub armour: Option<u8>,

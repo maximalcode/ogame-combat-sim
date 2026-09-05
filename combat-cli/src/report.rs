@@ -1,5 +1,8 @@
 use crate::cli::ReportArgs;
-use combat_ogame_api::reports::{ReportClient, ReportId};
+use combat_ogame_api::reports::{
+    CompletionInput, CompletionResult, ReportClient, ReportId, complete_candidate,
+};
+use std::fmt::Write as _;
 use std::io::Read;
 
 pub fn import(args: &ReportArgs) -> Result<String, String> {
@@ -32,4 +35,57 @@ pub fn import(args: &ReportArgs) -> Result<String, String> {
     let output = serde_json::to_string_pretty(&candidate)
         .map_err(|_| "could not serialize the sanitized candidate")?;
     Ok(format!("{output}\n"))
+}
+
+/// Complete a local structured artifact through the same library result used
+/// by future UI clients. The input contains a sanitized candidate, explicit
+/// evidence, and a pinned universe; it never accepts a `CombatRequest`.
+pub fn complete(args: &ReportArgs) -> Result<String, String> {
+    let path = args.file.as_ref().ok_or_else(|| {
+        "report complete requires --file PATH containing a completion artifact".to_owned()
+    })?;
+    let json = std::fs::read_to_string(path)
+        .map_err(|_| "could not read completion artifact".to_owned())?;
+    let input: CompletionInput = serde_json::from_str(&json)
+        .map_err(|_| {
+            "invalid completion artifact JSON; expected a sanitized candidate, evidence and pinned universe"
+                .to_owned()
+        })?;
+    let result = complete_candidate(&input);
+    let machine = serde_json::to_string_pretty(&result)
+        .map_err(|_| "could not serialize completion result".to_owned())?;
+    let mut output = String::new();
+    match &result {
+        CompletionResult::Verified { input } => {
+            output.push_str("Verified combat report candidate\n");
+            let _ = write!(
+                output,
+                "  attacker entities: {}\n  defender entities: {}\n  evidence fields: {}\n",
+                input.request.attacker.entities.len(),
+                input.request.defender.entities.len(),
+                input.evidence.fields.len()
+            );
+        }
+        CompletionResult::Incomplete { issues } => {
+            let _ = writeln!(
+                output,
+                "Incomplete combat report candidate ({} issues)\n",
+                issues.len()
+            );
+            for issue in issues {
+                let _ = writeln!(
+                    output,
+                    "  {} at {}: {}\n    evidence: {}\n",
+                    serde_json::to_string(&issue.kind).unwrap_or_else(|_| "unknown".to_owned()),
+                    issue.location,
+                    issue.explanation,
+                    issue.evidence_requests.join("; ")
+                );
+            }
+        }
+    }
+    output.push_str("\nMachine-readable result:\n");
+    output.push_str(&machine);
+    output.push('\n');
+    Ok(output)
 }

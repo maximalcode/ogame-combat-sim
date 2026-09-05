@@ -21,6 +21,7 @@ impl ModifiedStats {
     /// worth levels, and arrive already folded into `tech` by
     /// [`Technology::effective_levels`] — a General with Weapons 10 reaches
     /// this function as Weapons 12.
+    #[must_use]
     pub fn calculate(base_stats: &EntityStats, tech: &Technology, lifeform: LifeformBonus) -> Self {
         let base_weapon = base_stats.weapon as f32;
         let base_shield = base_stats.shield as f32;
@@ -56,6 +57,7 @@ impl StatsCache {
     /// modifiers, and taking them as separate arguments would let a caller pair
     /// one side's levels with the other side's lifeforms — a bug no test of
     /// either half would catch.
+    #[must_use]
     pub fn new(entity_stats: &HashMap<EntityType, EntityStats>, party: &PartyData) -> Self {
         let stats = entity_stats
             .iter()
@@ -74,6 +76,7 @@ impl StatsCache {
         Self { stats }
     }
 
+    #[must_use]
     pub fn get(&self, entity_type: EntityType) -> Option<&ModifiedStats> {
         self.stats.get(&entity_type)
     }

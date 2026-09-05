@@ -1,12 +1,19 @@
 //! On-demand community-proxy imports. Candidates are deliberately not
 //! `CombatRequest`s: review missing fields and modifier semantics before simulation.
 mod client;
+mod completion;
 mod model;
 mod parse;
 #[cfg(test)]
 mod tests;
 
 pub use client::ReportClient;
+pub use completion::{
+    CompletionEvidence, CompletionInput, CompletionResult, EvidenceLedger, EvidenceRecord,
+    EvidenceSource, FieldIssue, FieldIssueKind, PartialLifeformBonus, ParticipantEvidence,
+    PinnedUniverse, PinnedUniverseSettings, TechnologyBasis, TechnologyEvidence,
+    VerifiedBattleInput, complete_candidate, complete_report,
+};
 pub use model::{Candidate, Participant, Provenance, ResourcesCandidate, TechnologyCandidate};
 pub use parse::parse_report;
 
@@ -16,7 +23,7 @@ use std::fmt;
 pub const MAX_REPORT_BYTES: usize = 2 * 1024 * 1024;
 
 /// The two report kinds supported by this import path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReportKind {
     Combat,

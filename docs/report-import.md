@@ -65,6 +65,29 @@ are discarded through an explicit output allowlist. Output still contains
 battle evidence: review privacy and obtain publication consent before sharing
 it or creating a regression fixture. No fixture is published automatically.
 
+To complete a single combat candidate offline, pass a structured artifact to
+`combat-cli report complete --file`. The artifact supplies explicit participant
+evidence and a fully pinned universe. Completion reports every missing or
+unsupported field together; it never fills absent technology, class, lifeform,
+composition, or temporal status with a default. In particular, participant
+evidence must include a `lifeform` object even when it is `{}`: an omitted or
+`null` value leaves the lifeform state unknown. A verified result keeps the
+battle provenance and universe snapshot provenance in a separate evidence
+ledger, while the observed outcome stays outside the `CombatRequest`.
+
+When a lifeform object names an entity, its `weapon`, `shield`, and `armour`
+percentages are required individually. An omitted or `null` combat percentage
+produces a targeted completion issue; it is never treated as an explicit zero.
+An empty entity object therefore remains incomplete, while the explicitly empty
+whole `lifeform` map confirms that no lifeform modifiers apply. Optional
+`cargo` and `speed` values are retained when supplied and are not invented
+when absent.
+
+Supplied lifeform percentages must be finite and non-negative. Completion also
+checks that the resulting weapon, shield, and armour starting statistics remain
+valid for the simulator's numeric representation; it does not impose a
+game-specific maximum where none is established.
+
 ## Validation
 
 Normal Rust tests are offline: synthetic schema examples test parsing and

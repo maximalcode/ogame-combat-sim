@@ -291,6 +291,8 @@ name = "combat-ogame-api"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "combat-core",
+ "combat-fixtures",
  "combat-types",
  "quick-xml",
  "reqwest",

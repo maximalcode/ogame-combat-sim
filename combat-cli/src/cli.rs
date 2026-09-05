@@ -50,6 +50,9 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct ReportArgs {
+    /// Complete a local artifact produced from a sanitized combat candidate.
+    #[arg(value_name = "ACTION")]
+    pub action: Option<String>,
     /// Read the report ID from this local file; otherwise read one ID from stdin.
     #[arg(long, value_name = "PATH")]
     pub file: Option<std::path::PathBuf>,
