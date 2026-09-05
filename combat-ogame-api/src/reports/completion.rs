@@ -1168,13 +1168,8 @@ fn assessment_limitations(
     request: &CombatRequest,
 ) -> Vec<AssessmentLimitation> {
     let mut limitations = Vec::new();
-    let defender_has_defences = request
-        .defender
-        .entities
-        .keys()
-        .any(|entity| (400..500).contains(entity));
     for field in ["debris_fleet", "debris_defence", "debris_deuterium"] {
-        if field == "debris_defence" && !defender_has_defences {
+        if !debris_setting_applies(field, request, &universe.settings, false) {
             continue;
         }
         let missing = match field {
@@ -1213,6 +1208,12 @@ fn assessment_limitations(
         return limitations;
     }
 
+    let Some(field) = ["debris_fleet", "debris_defence", "debris_deuterium"]
+        .into_iter()
+        .find(|field| debris_setting_applies(field, request, &universe.settings, true))
+    else {
+        return limitations;
+    };
     for metric in [
         "generated_debris",
         "moon_chance",
@@ -1222,7 +1223,7 @@ fn assessment_limitations(
     ] {
         limitations.push(AssessmentLimitation {
             metric: metric.to_owned(),
-            location: "universe.settings.debris_fleet".to_owned(),
+            location: format!("universe.settings.{field}"),
             explanation: format!(
                 "the acknowledged current universe snapshot is not historical proof for the report event; {metric} cannot be assessed against the battle-time debris rules"
             ),
@@ -1230,6 +1231,68 @@ fn assessment_limitations(
         });
     }
     limitations
+}
+
+/// Return whether an unknown debris setting can affect a modeled output for
+/// the completed composition.  The optional rate is deliberately treated as
+/// potentially non-zero when it is unknown; only a known zero rate proves that
+/// a deuterium switch cannot contribute through that side of the battle.
+fn debris_setting_applies(
+    field: &str,
+    request: &CombatRequest,
+    settings: &PinnedUniverseSettings,
+    historical_unknown: bool,
+) -> bool {
+    match field {
+        "debris_fleet" => {
+            request
+                .attacker
+                .entities
+                .iter()
+                .any(|(&entity, &count)| count > 0 && entity < 400)
+                || request
+                    .defender
+                    .entities
+                    .iter()
+                    .any(|(&entity, &count)| count > 0 && entity < 400)
+        }
+        "debris_defence" => request
+            .defender
+            .entities
+            .iter()
+            .any(|(&entity, &count)| count > 0 && (400..500).contains(&entity)),
+        "debris_deuterium" => {
+            let fleet_rate = (!historical_unknown)
+                .then_some(settings.debris_fleet)
+                .flatten();
+            let defence_rate = (!historical_unknown)
+                .then_some(settings.debris_defence)
+                .flatten();
+            deuterium_cost_can_contribute(&request.attacker.entities, fleet_rate, false)
+                || deuterium_cost_can_contribute(&request.defender.entities, fleet_rate, false)
+                || deuterium_cost_can_contribute(&request.defender.entities, defence_rate, true)
+        }
+        _ => false,
+    }
+}
+
+fn deuterium_cost_can_contribute(
+    entities: &combat_types::FleetComposition,
+    applicable_rate: Option<u8>,
+    defences_only: bool,
+) -> bool {
+    entities.iter().any(|(&entity, &count)| {
+        count > 0
+            && if defences_only {
+                (400..500).contains(&entity)
+            } else {
+                entity < 400
+            }
+            && applicable_rate != Some(0)
+            && entity_stats()
+                .get(&entity)
+                .is_some_and(|stats| stats.cost_deuterium > 0)
+    })
 }
 
 fn player_class(value: u8) -> PlayerClass {

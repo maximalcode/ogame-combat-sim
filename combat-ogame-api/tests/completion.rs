@@ -204,11 +204,6 @@ fn missing_debris_settings_keep_execution_verified_with_metric_limitations() {
     let CompletionResult::Verified { input } = result else {
         panic!("missing debris settings must not block combat execution");
     };
-    assert!(input.assessment_limitations.iter().any(|limitation| {
-        limitation.metric == "generated_debris"
-            && limitation.location == "universe.settings.debris_deuterium"
-            && !limitation.affects_execution
-    }));
     for field in ["debris_fleet", "debris_defence"] {
         assert!(input.assessment_limitations.iter().any(|limitation| {
             limitation.metric == "generated_debris"
@@ -216,6 +211,12 @@ fn missing_debris_settings_keep_execution_verified_with_metric_limitations() {
                 && !limitation.affects_execution
         }));
     }
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location != "universe.settings.debris_deuterium")
+    );
     let universe_evidence = &input.evidence.fields["universe"].value["settings"];
     assert!(universe_evidence["debris_fleet"].is_null());
     assert!(universe_evidence["debris_defence"].is_null());
@@ -247,6 +248,94 @@ fn missing_defence_debris_is_ignored_when_completed_defender_has_no_defences() {
             .assessment_limitations
             .iter()
             .all(|limitation| limitation.location == "universe.settings.debris_fleet")
+    );
+}
+
+#[test]
+fn missing_deuterium_debris_is_ignored_when_completed_units_cost_no_deuterium() {
+    let mut pinned = universe();
+    pinned.settings.debris_deuterium = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location != "universe.settings.debris_deuterium")
+    );
+}
+
+#[test]
+fn missing_deuterium_debris_limits_outputs_for_a_deuterium_costing_ship() {
+    let mut pinned = universe();
+    pinned.settings.debris_deuterium = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert_eq!(input.assessment_limitations.len(), 5);
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location == "universe.settings.debris_deuterium")
+    );
+}
+
+#[test]
+fn missing_deuterium_debris_is_ignored_when_the_known_fleet_rate_is_zero() {
+    let mut pinned = universe();
+    pinned.settings.debris_fleet = Some(0);
+    pinned.settings.debris_deuterium = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location != "universe.settings.debris_deuterium")
+    );
+}
+
+#[test]
+fn missing_deuterium_debris_limits_outputs_for_a_deuterium_costing_defence() {
+    let mut pinned = universe();
+    pinned.settings.debris_defence = Some(30);
+    pinned.settings.debris_deuterium = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(404)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert_eq!(input.assessment_limitations.len(), 5);
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location == "universe.settings.debris_deuterium")
     );
 }
 
@@ -308,6 +397,31 @@ fn acknowledged_current_settings_keep_execution_verified_but_limit_historical_de
         assert_eq!(limitation.location, "universe.settings.debris_fleet");
         assert!(!limitation.affects_execution);
     }
+}
+
+#[test]
+fn acknowledged_current_zero_debris_rates_do_not_prove_historical_zero_rates() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    pinned.settings.debris_fleet = Some(0);
+    pinned.settings.debris_defence = Some(0);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("acknowledged current settings should execute");
+    };
+
+    assert_eq!(input.assessment_limitations.len(), 5);
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location == "universe.settings.debris_fleet")
+    );
 }
 
 #[test]
