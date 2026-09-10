@@ -3,6 +3,10 @@ use combat_ogame_api::reports::{
     ParticipantEvidence, PinnedUniverse, PinnedUniverseSettings, Provenance, TechnologyBasis,
     TechnologyCandidate, TechnologyEvidence, complete_candidate,
 };
+use combat_ogame_api::{
+    OGameClient, Universe, parse_server_data,
+    reports::{pinned_universe_from_server_data, resolve_current_universe},
+};
 use combat_types::{AllianceClass, PlayerClass};
 use std::collections::BTreeMap;
 
@@ -16,6 +20,7 @@ fn universe() -> PinnedUniverse {
             donut_galaxy: Some(true),
             donut_systems: Some(true),
             fleet_speed: Some(1),
+            rapid_fire: Some(true),
             debris_fleet: Some(30),
             debris_defence: Some(0),
             debris_deuterium: Some(false),
@@ -98,7 +103,519 @@ fn evidence() -> CompletionEvidence {
                 },
             ),
         ]),
+        historical_rapid_fire: None,
     }
+}
+
+#[test]
+fn public_server_metadata_resolves_to_a_current_pinned_universe() {
+    let server = parse_server_data(include_str!("fixtures/serverData.xml")).unwrap();
+    let resolved = pinned_universe_from_server_data("en", 123, &server).unwrap();
+
+    assert_eq!(resolved.community, "en");
+    assert_eq!(resolved.universe, 123);
+    assert_eq!(resolved.settings.galaxies, Some(9));
+    assert_eq!(resolved.settings.systems, Some(499));
+    assert_eq!(resolved.settings.fleet_speed, Some(2));
+    assert_eq!(resolved.settings.rapid_fire, Some(true));
+    assert_eq!(resolved.settings.debris_fleet, Some(70));
+    assert_eq!(resolved.settings.debris_defence, Some(30));
+    assert_eq!(resolved.settings.debris_deuterium, Some(true));
+    assert_eq!(resolved.settings.deuterium_save_factor, Some(80));
+    assert_eq!(resolved.source, EvidenceSource::PublicMetadata);
+    assert_eq!(resolved.source_timestamp, Some(1_700_000_000));
+    assert_eq!(resolved.source_version.as_deref(), Some("13.0.0"));
+    assert_eq!(resolved.current, Some(true));
+    assert_eq!(resolved.acknowledged_current, Some(false));
+}
+
+#[test]
+fn public_server_metadata_rejects_a_mismatched_identity() {
+    let server = parse_server_data(include_str!("fixtures/serverData.xml")).unwrap();
+    let error = pinned_universe_from_server_data("de", 123, &server).unwrap_err();
+
+    assert!(error.to_string().contains("identity"));
+}
+
+#[test]
+fn public_server_metadata_rejects_non_integral_or_out_of_range_units() {
+    let mut server = parse_server_data(include_str!("fixtures/serverData.xml")).unwrap();
+    server.debris_factor = 0.705;
+    let error = pinned_universe_from_server_data("en", 123, &server).unwrap_err();
+
+    assert!(error.to_string().contains("debris_factor"));
+}
+
+#[test]
+fn public_server_metadata_preserves_missing_output_only_setting_as_unknown() {
+    let xml = include_str!("fixtures/serverData.xml")
+        .replace("  <deuteriumInDebris>1</deuteriumInDebris>\n", "");
+    let server = parse_server_data(&xml).unwrap();
+    let pinned = pinned_universe_from_server_data("en", 123, &server).unwrap();
+
+    assert_eq!(pinned.settings.debris_deuterium, None);
+}
+
+#[test]
+fn public_rapid_fire_setting_reaches_the_completed_request() {
+    let mut server = parse_server_data(include_str!("fixtures/serverData.xml")).unwrap();
+    server.number = 1;
+    server.rapid_fire = false;
+    let pinned = pinned_universe_from_server_data("en", 1, &server).unwrap();
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: PinnedUniverse {
+            acknowledged_current: Some(true),
+            ..pinned
+        },
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("expected verified input");
+    };
+    assert!(!input.request.use_rapid_fire);
+}
+
+#[test]
+fn missing_debris_settings_keep_execution_verified_with_metric_limitations() {
+    let xml = include_str!("fixtures/serverData.xml")
+        .replace("  <deuteriumInDebris>1</deuteriumInDebris>\n", "");
+    let server = parse_server_data(&xml).unwrap();
+    let pinned = pinned_universe_from_server_data("en", 123, &server)
+        .expect("missing output-only setting should remain resolvable");
+    let pinned = PinnedUniverse {
+        settings: PinnedUniverseSettings {
+            debris_fleet: None,
+            debris_defence: None,
+            ..pinned.settings
+        },
+        ..pinned
+    };
+    let mut candidate = candidate(Some(204), Some(401));
+    candidate.provenance.universe = 123;
+    let result = complete_candidate(&CompletionInput {
+        candidate,
+        evidence: evidence(),
+        universe: PinnedUniverse {
+            current: Some(false),
+            acknowledged_current: Some(false),
+            ..pinned
+        },
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing debris settings must not block combat execution");
+    };
+    for field in ["debris_fleet", "debris_defence"] {
+        assert!(input.assessment_limitations.iter().any(|limitation| {
+            limitation.metric == "generated_debris"
+                && limitation.location == format!("universe.settings.{field}")
+                && !limitation.affects_execution
+        }));
+    }
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location != "universe.settings.debris_deuterium")
+    );
+    let universe_evidence = &input.evidence.fields["universe"].value["settings"];
+    assert!(universe_evidence["debris_fleet"].is_null());
+    assert!(universe_evidence["debris_defence"].is_null());
+    assert!(universe_evidence["debris_deuterium"].is_null());
+}
+
+#[test]
+fn missing_defence_debris_is_ignored_when_completed_defender_has_no_defences() {
+    let mut pinned = universe();
+    pinned.settings.debris_fleet = None;
+    pinned.settings.debris_defence = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location != "universe.settings.debris_defence")
+    );
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location == "universe.settings.debris_fleet")
+    );
+}
+
+#[test]
+fn missing_deuterium_debris_is_ignored_when_completed_units_cost_no_deuterium() {
+    let mut pinned = universe();
+    pinned.settings.debris_deuterium = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location != "universe.settings.debris_deuterium")
+    );
+}
+
+#[test]
+fn missing_deuterium_debris_limits_outputs_for_a_deuterium_costing_ship() {
+    let mut pinned = universe();
+    pinned.settings.debris_deuterium = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert_eq!(input.assessment_limitations.len(), 5);
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location == "universe.settings.debris_deuterium")
+    );
+}
+
+#[test]
+fn missing_deuterium_debris_is_ignored_when_the_known_fleet_rate_is_zero() {
+    let mut pinned = universe();
+    pinned.settings.debris_fleet = Some(0);
+    pinned.settings.debris_deuterium = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location != "universe.settings.debris_deuterium")
+    );
+}
+
+#[test]
+fn missing_deuterium_debris_limits_outputs_for_a_deuterium_costing_defence() {
+    let mut pinned = universe();
+    pinned.settings.debris_defence = Some(30);
+    pinned.settings.debris_deuterium = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(404)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("missing output-only settings must not block combat execution");
+    };
+
+    assert_eq!(input.assessment_limitations.len(), 5);
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location == "universe.settings.debris_deuterium")
+    );
+}
+
+#[tokio::test]
+async fn current_resolver_uses_the_public_clients_existing_cache_path() {
+    let cache = std::env::temp_dir().join(format!(
+        "combat-ogame-api-resolution-{}",
+        std::process::id()
+    ));
+    let directory = cache.join("s123-en");
+    std::fs::create_dir_all(&directory).unwrap();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let xml = include_str!("fixtures/serverData.xml").replace(
+        "timestamp=\"1700000000\"",
+        &format!("timestamp=\"{timestamp}\""),
+    );
+    std::fs::write(directory.join("serverData.xml"), xml).unwrap();
+
+    let mut report = candidate(Some(204), Some(401));
+    report.provenance.universe = 123;
+    let client = OGameClient::new(Universe::new("s123-en").unwrap(), &cache).unwrap();
+    let resolved = resolve_current_universe(&report, &client).await.unwrap();
+
+    assert_eq!(resolved.universe, 123);
+    assert_eq!(resolved.source, EvidenceSource::PublicMetadata);
+    let _ = std::fs::remove_dir_all(cache);
+}
+
+#[test]
+fn acknowledged_current_settings_keep_execution_verified_but_limit_historical_debris() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("acknowledged current settings should execute");
+    };
+
+    assert_eq!(input.assessment_limitations.len(), 5);
+    for metric in [
+        "generated_debris",
+        "moon_chance",
+        "recyclers_needed",
+        "attacker_profit",
+        "defender_profit",
+    ] {
+        let limitation = input
+            .assessment_limitations
+            .iter()
+            .find(|limitation| limitation.metric == metric)
+            .unwrap_or_else(|| panic!("missing limitation for {metric}"));
+        assert_eq!(limitation.location, "universe.settings.debris_fleet");
+        assert!(!limitation.affects_execution);
+    }
+}
+
+#[test]
+fn acknowledged_current_settings_block_historical_rapid_fire_when_composition_can_use_it() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("current rapid-fire metadata must not prove an older battle's setting");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.rapid_fire"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+}
+
+#[test]
+fn explicit_historical_rapid_fire_completes_relevant_current_snapshot_separately() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    let mut completion_evidence = evidence();
+    completion_evidence.historical_rapid_fire = Some(false);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: completion_evidence,
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("explicit historical rapid-fire evidence should complete the battle");
+    };
+    assert!(!input.request.use_rapid_fire);
+    assert_eq!(
+        input.evidence.fields["universe"].value["settings"]["rapid_fire"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        input.evidence.fields["universe.settings.rapid_fire.historical"].source,
+        EvidenceSource::Supplied
+    );
+    assert_eq!(
+        input.evidence.fields["universe.settings.rapid_fire.historical"].value,
+        serde_json::json!(false)
+    );
+}
+
+#[test]
+fn explicit_historical_rapid_fire_controls_execution_at_every_snapshot_timestamp() {
+    for (label, attacker, defender) in [("relevant", 206, 204), ("irrelevant", 204, 401)] {
+        for event_timestamp in [1_700_000_099, 1_700_000_100, 1_700_000_101] {
+            let mut pinned = universe();
+            pinned.current = Some(true);
+            pinned.acknowledged_current = Some(true);
+            let mut completion_evidence = evidence();
+            completion_evidence.historical_rapid_fire = Some(false);
+            let mut candidate = candidate(Some(attacker), Some(defender));
+            candidate.provenance.event_timestamp = Some(event_timestamp);
+            let result = complete_candidate(&CompletionInput {
+                candidate,
+                evidence: completion_evidence,
+                universe: pinned,
+            });
+            let CompletionResult::Verified { input } = result else {
+                panic!("{label} composition should accept explicit historical evidence");
+            };
+            assert!(
+                !input.request.use_rapid_fire,
+                "{label} composition at {event_timestamp}"
+            );
+            assert_eq!(
+                input.evidence.fields["universe.settings.rapid_fire.historical"].value,
+                serde_json::json!(false),
+                "{label} composition at {event_timestamp}"
+            );
+        }
+    }
+}
+
+#[test]
+fn missing_historical_rapid_fire_blocks_relevant_composition_at_every_snapshot_timestamp() {
+    for event_timestamp in [1_700_000_099, 1_700_000_100, 1_700_000_101] {
+        let mut pinned = universe();
+        pinned.current = Some(true);
+        pinned.acknowledged_current = Some(true);
+        let mut candidate = candidate(Some(206), Some(204));
+        candidate.provenance.event_timestamp = Some(event_timestamp);
+        let result = complete_candidate(&CompletionInput {
+            candidate,
+            evidence: evidence(),
+            universe: pinned,
+        });
+        let CompletionResult::Incomplete { issues } = result else {
+            panic!("missing historical evidence must block execution at {event_timestamp}");
+        };
+        assert!(issues.iter().any(|issue| {
+            issue.location == "universe.settings.rapid_fire"
+                && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+        }));
+    }
+}
+
+#[test]
+fn historical_rapid_fire_evidence_conflicting_with_pinned_value_is_rejected() {
+    let mut completion_evidence = evidence();
+    completion_evidence.historical_rapid_fire = Some(false);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: completion_evidence,
+        universe: universe(),
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("conflicting historical rapid-fire evidence must not complete");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.rapid_fire"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Contradictory
+    }));
+}
+
+#[test]
+fn acknowledged_current_settings_remain_verified_when_rapid_fire_cannot_affect_composition() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    assert!(matches!(result, CompletionResult::Verified { .. }));
+}
+
+#[test]
+fn absent_historical_rapid_fire_is_verified_when_composition_cannot_use_it() {
+    let mut pinned = universe();
+    pinned.settings.rapid_fire = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("irrelevant absent rapid-fire metadata must not block completion");
+    };
+    assert!(!input.request.use_rapid_fire);
+    assert!(input.evidence.fields["universe"].value["settings"]["rapid_fire"].is_null());
+}
+
+#[test]
+fn absent_historical_rapid_fire_blocks_relevant_composition_without_evidence() {
+    let mut pinned = universe();
+    pinned.settings.rapid_fire = None;
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("relevant absent rapid-fire metadata must block completion");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.settings.rapid_fire"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+}
+
+#[test]
+fn explicit_historical_rapid_fire_completes_relevant_composition_without_pinned_value() {
+    let mut pinned = universe();
+    pinned.settings.rapid_fire = None;
+    let mut completion_evidence = evidence();
+    completion_evidence.historical_rapid_fire = Some(false);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: completion_evidence,
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("explicit historical rapid-fire evidence should complete without a pin");
+    };
+    assert!(!input.request.use_rapid_fire);
+    assert!(input.evidence.fields["universe"].value["settings"]["rapid_fire"].is_null());
+    assert_eq!(
+        input.evidence.fields["universe.settings.rapid_fire.historical"].value,
+        serde_json::json!(false)
+    );
+}
+
+#[test]
+fn acknowledged_current_zero_debris_rates_do_not_prove_historical_zero_rates() {
+    let mut pinned = universe();
+    pinned.current = Some(true);
+    pinned.acknowledged_current = Some(true);
+    pinned.settings.debris_fleet = Some(0);
+    pinned.settings.debris_defence = Some(0);
+    let mut completion_evidence = evidence();
+    completion_evidence.historical_rapid_fire = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(206), Some(204)),
+        evidence: completion_evidence,
+        universe: pinned,
+    });
+    let CompletionResult::Verified { input } = result else {
+        panic!("acknowledged current settings should execute");
+    };
+
+    assert_eq!(input.assessment_limitations.len(), 5);
+    assert!(
+        input
+            .assessment_limitations
+            .iter()
+            .all(|limitation| limitation.location == "universe.settings.debris_fleet")
+    );
 }
 
 #[test]
@@ -160,10 +677,6 @@ fn completion_returns_all_actionable_issues_without_a_request() {
     assert!(issues.iter().any(|issue| issue.location == "A1.entities"));
     assert!(issues.iter().any(|issue| issue.location == "D1.entities"));
     assert!(issues.iter().any(|issue| issue.location == "A1.technology"));
-    assert!(issues.iter().any(|issue| {
-        issue.location == "universe.settings.debris_fleet"
-            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
-    }));
     assert!(
         issues
             .iter()
@@ -837,9 +1350,6 @@ fn every_missing_universe_setting_has_a_targeted_issue() {
         "donut_galaxy",
         "donut_systems",
         "fleet_speed",
-        "debris_fleet",
-        "debris_defence",
-        "debris_deuterium",
         "deuterium_save_factor",
     ] {
         assert!(
@@ -916,6 +1426,25 @@ fn omitted_temporal_status_is_a_missing_issue() {
     });
     let CompletionResult::Incomplete { issues } = result else {
         panic!("expected incomplete result");
+    };
+    assert!(issues.iter().any(|issue| {
+        issue.location == "universe.current"
+            && issue.kind == combat_ogame_api::reports::FieldIssueKind::Missing
+    }));
+}
+
+#[test]
+fn acknowledged_snapshot_without_temporal_status_is_incomplete() {
+    let mut pinned = universe();
+    pinned.current = None;
+    pinned.acknowledged_current = Some(true);
+    let result = complete_candidate(&CompletionInput {
+        candidate: candidate(Some(204), Some(401)),
+        evidence: evidence(),
+        universe: pinned,
+    });
+    let CompletionResult::Incomplete { issues } = result else {
+        panic!("an acknowledged snapshot without temporal status must be incomplete");
     };
     assert!(issues.iter().any(|issue| {
         issue.location == "universe.current"

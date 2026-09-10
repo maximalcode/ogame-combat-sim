@@ -44,8 +44,10 @@ pub struct ServerData {
     #[serde(deserialize_with = "deserialize_xml_bool")]
     pub donut_system: bool,
     pub global_deuterium_save_factor: f64,
-    #[serde(default, deserialize_with = "deserialize_xml_bool")]
-    pub deuterium_in_debris: bool,
+    /// Optional because older public responses may omit this combat-relevant
+    /// field. Completion must not turn an omitted value into `false`.
+    #[serde(default, deserialize_with = "deserialize_optional_xml_bool")]
+    pub deuterium_in_debris: Option<bool>,
     pub lifeform_settings: LifeformSettings,
 }
 
@@ -384,6 +386,19 @@ where
             "expected XML boolean, got {other:?}"
         ))),
     }
+}
+
+fn deserialize_optional_xml_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)?
+        .map(|value| match value.as_str() {
+            "1" | "true" => Ok(true),
+            "0" | "false" => Ok(false),
+            _ => Err(de::Error::custom("expected XML boolean 0/1")),
+        })
+        .transpose()
 }
 
 fn deserialize_optional_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>

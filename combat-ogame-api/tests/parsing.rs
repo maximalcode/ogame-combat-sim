@@ -21,7 +21,7 @@ fn parses_server_settings_and_the_complete_lifeform_factor_shapes() {
     assert_eq!(server.server_id, "en123");
     assert_eq!(server.speed, 8);
     assert_abs_diff_eq!(server.debris_factor, 0.7);
-    assert!(server.deuterium_in_debris);
+    assert_eq!(server.deuterium_in_debris, Some(true));
 
     let humans = &server.lifeform_settings.lifeforms[0];
     assert_eq!(
@@ -33,6 +33,14 @@ fn parses_server_settings_and_the_complete_lifeform_factor_shapes() {
     assert_eq!(cost_reduction.value("technologyFactor"), Some(1.0));
     assert_eq!(cost_reduction.value("technologyMax"), Some(0.5));
     assert_eq!(cost_reduction.value("timeTechnologyMax"), Some(0.99));
+}
+
+#[test]
+fn omitted_deuterium_debris_metadata_stays_unknown() {
+    let xml = SERVER_DATA.replace("  <deuteriumInDebris>1</deuteriumInDebris>\n", "");
+    let server = parse_server_data(&xml).expect("serverData fixture without optional field");
+
+    assert_eq!(server.deuterium_in_debris, None);
 }
 
 #[test]

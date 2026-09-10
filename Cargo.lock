@@ -257,6 +257,7 @@ dependencies = [
  "combat-fixtures",
  "combat-ogame-api",
  "combat-types",
+ "serde",
  "serde_json",
  "serde_path_to_error",
  "tokio",

@@ -60,6 +60,17 @@ pub struct ReportArgs {
     /// Raw responses are not saved. Independent processes share its quota.
     #[arg(long)]
     pub allow_proxy_transfer: bool,
+    /// Resolve the candidate's current universe settings from public
+    /// `serverData.xml` metadata before running completion.
+    #[arg(long)]
+    pub resolve_current: bool,
+    /// Acknowledge that a current public snapshot is being used for this
+    /// report when historical settings are unavailable.
+    #[arg(long, requires = "resolve_current")]
+    pub acknowledge_current: bool,
+    /// Directory used by the existing public metadata cache.
+    #[arg(long, value_name = "PATH", default_value = ".ogame-cache")]
+    pub cache_dir: std::path::PathBuf,
 }
 
 /// What to do with a fixture.
@@ -385,6 +396,28 @@ mod tests {
                 panic!("test argv should be a sim")
             }
         }
+    }
+
+    #[test]
+    fn report_completion_accepts_current_metadata_resolution_flags() {
+        let cli = Cli::try_parse_from([
+            "combat-cli",
+            "report",
+            "complete",
+            "--file",
+            "artifact.json",
+            "--resolve-current",
+            "--acknowledge-current",
+            "--cache-dir",
+            "metadata-cache",
+        ])
+        .unwrap();
+        let Command::Report(args) = cli.command else {
+            panic!("expected report command");
+        };
+        assert!(args.resolve_current);
+        assert!(args.acknowledge_current);
+        assert_eq!(args.cache_dir, std::path::PathBuf::from("metadata-cache"));
     }
 
     #[test]

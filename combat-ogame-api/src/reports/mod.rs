@@ -6,16 +6,20 @@ mod model;
 mod parse;
 #[cfg(test)]
 mod tests;
+mod universe;
 
 pub use client::ReportClient;
 pub use completion::{
-    CompletionEvidence, CompletionInput, CompletionResult, EvidenceLedger, EvidenceRecord,
-    EvidenceSource, FieldIssue, FieldIssueKind, PartialLifeformBonus, ParticipantEvidence,
-    PinnedUniverse, PinnedUniverseSettings, TechnologyBasis, TechnologyEvidence,
-    VerifiedBattleInput, complete_candidate, complete_report,
+    AssessmentLimitation, CompletionEvidence, CompletionInput, CompletionResult, EvidenceLedger,
+    EvidenceRecord, EvidenceSource, FieldIssue, FieldIssueKind, PartialLifeformBonus,
+    ParticipantEvidence, PinnedUniverse, PinnedUniverseSettings, TechnologyBasis,
+    TechnologyEvidence, VerifiedBattleInput, complete_candidate, complete_report,
 };
 pub use model::{Candidate, Participant, Provenance, ResourcesCandidate, TechnologyCandidate};
 pub use parse::parse_report;
+pub use universe::{
+    UniverseResolutionError, pinned_universe_from_server_data, resolve_current_universe,
+};
 
 use std::fmt;
 
