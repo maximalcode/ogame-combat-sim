@@ -78,3 +78,16 @@ jobs:
       # Tests build at opt-level 3 (see [profile.test] in Cargo.toml). The
       # engine is a Monte Carlo loop and runs ~14x slower unoptimised.
       - run: cargo test --workspace --locked
+
+  frontend-behavior:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm test

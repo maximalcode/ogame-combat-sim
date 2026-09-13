@@ -345,11 +345,15 @@ cargo fmt --check \
   repo's own choices live in `eslint.config.mjs` and `tsconfig.json`, which
   extend them; `tsconfig.json` overrides only what a browser app must differ on
   (DOM lib, bundler resolution, JSX, no emit) and relaxes none of the strict
-  family. The CI gate is exactly `npm ci && npm run lint` run inside
-  `frontend/` — no build, no typecheck, no tests — so **`lint` is the whole
-  TypeScript gate**, and `--max-warnings 0` is what gives `no-console` teeth.
-  `frontend/` is not a Cargo workspace member; `cargo test --workspace` never
-  sees it.
+  family. Frontend CI now includes the HTTP-boundary browser suite and build;
+  see `frontend/package.json` and `.github/workflows/quality.yml`. The separate
+  local API smoke procedure is in `frontend/README.md`. `cargo test --workspace`
+  never sees frontend tests.
+- **The Dock planner preserves assumptions.** `frontend/src/planner/model.ts`
+  keeps available fleet quantities separate from selected attacking quantities.
+  Blank numeric fields stay blank until `makeRequest` builds an attack scenario.
+  The result's average loss uses per-run economics because the summary report
+  truncates average fleet counts before valuing them.
 - **The OGame XML cache has two clocks.** `combat-ogame-api` accepts a cached
   response only while both its file age and the root `timestamp` are within the
   endpoint's own cadence (hourly for highscores, daily for players and server
