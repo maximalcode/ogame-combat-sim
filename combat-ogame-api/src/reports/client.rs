@@ -17,6 +17,14 @@ impl ReportClient {
         Self::with_endpoint("https://ogapi.faw-kes.de/", Duration::from_secs(20))
     }
 
+    /// Local transport seam for offline integration tests. No configurable remote host.
+    pub fn for_local_provider(address: std::net::SocketAddr) -> Result<Self, ReportError> {
+        if !address.ip().is_loopback() {
+            return Err(ReportError::Transport);
+        }
+        Self::with_endpoint(&format!("http://{address}/"), Duration::from_secs(20))
+    }
+
     // Private: production callers cannot choose an arbitrary fetch destination.
     pub(super) fn with_endpoint(endpoint: &str, timeout: Duration) -> Result<Self, ReportError> {
         let http = reqwest::Client::builder()

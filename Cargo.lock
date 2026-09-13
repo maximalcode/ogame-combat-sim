@@ -239,8 +239,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "combat-core",
+ "combat-ogame-api",
  "combat-types",
  "serde",
+ "serde_json",
  "tokio",
  "tower",
  "tower-http",
