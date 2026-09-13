@@ -254,7 +254,7 @@ export function FleetPanel({ attacker, fleet, onChange }: Readonly<Props>) {
         <span className="eyebrow">
           {attacker
             ? "ANGREIFER / AUSWAHL AUS DEINEM SNAPSHOT"
-            : "VERTEIDIGER / MANUELLE AUFSTELLUNG"}
+            : "VERTEIDIGER / AUFSTELLUNG"}
         </span>
         <h2>{attacker ? "Deine Flotte" : "Gegner"}</h2>
       </header>

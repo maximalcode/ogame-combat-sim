@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { postSimulate } from "@/api/client";
 import { FleetPanel } from "@/planner/FleetPanel";
 import { NumberField } from "@/planner/NumberField";
 import { emptyScenario, makeRequest } from "@/planner/model";
 import { Results, type Run } from "@/planner/Results";
 import "@/planner/planner.css";
+import { readAgr } from "@/planner/agr";
 
 export function App() {
   const [scenario, setScenario] = useState(emptyScenario);
@@ -13,6 +14,30 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const running = useRef(false);
+  const [importError, setImportError] = useState("");
+  const [sources, setSources] = useState<string[]>([]);
+  const currentScenario = useRef(scenario);
+  currentScenario.current = scenario;
+  useEffect(() => {
+    const receive = () => {
+      try {
+        const imported = readAgr(window.location.hash, currentScenario.current);
+        if (imported) {
+          currentScenario.current = imported.scenario;
+          setScenario(imported.scenario);
+          setSources(imported.sources);
+          setImportError("");
+        }
+      } catch (cause) {
+        setImportError(cause instanceof Error ? cause.message : "AGR-Übergabe fehlgeschlagen.");
+      }
+    };
+    receive();
+    window.addEventListener("hashchange", receive);
+    return () => {
+      window.removeEventListener("hashchange", receive);
+    };
+  }, []);
   const signature = JSON.stringify({ scenario, simulations });
   const empty = [scenario.attacker, scenario.defender].some(
     (fleet) => !fleet.units.some((unit) => Number(unit.selected) > 0),
@@ -40,7 +65,7 @@ export function App() {
         <span className="brand">
           ◈ ORBIT <small>Kampfsimulator</small>
         </span>
-        <span>Manueller Angriffsplaner</span>
+        <span>Angriffsplaner</span>
       </header>
       <main>
         <div className="workspace-title">
@@ -48,6 +73,25 @@ export function App() {
           <h1>Bereit für den Angriff.</h1>
           <p>Bestand ergänzen. Flotte wählen. Chancen prüfen.</p>
         </div>
+        {importError && (
+          <p role="alert" className="error">
+            {importError}
+          </p>
+        )}
+        {sources.length > 0 && (
+          <details className="agr-source">
+            <summary>AGR übernommen · Quellen der Übergabe</summary>
+            <p>
+              Importierte Ausgangswerte; spätere Änderungen sind manuell. Fehlende Zahlen bleiben
+              leer. Fehlende Klassen: keine Klasse angenommen.
+            </p>
+            <ul>
+              {sources.map((source, index) => (
+                <li key={`${String(index)}-${source}`}>{source}</li>
+              ))}
+            </ul>
+          </details>
+        )}
         <div className="fleet-pair">
           <FleetPanel
             attacker
@@ -146,8 +190,8 @@ export function App() {
           </p>
         )}
         <footer>
-          Available fleet: manuell gelieferter Snapshot · Selected attacking fleet: deine Auswahl
-          daraus. Kein Live-Inventar.
+          Available fleet: gelieferter Snapshot · Selected attacking fleet: deine Auswahl daraus.
+          Kein Live-Inventar.
           <br />
           Inoffizielles Fan-Tool. Eigene schematische Flottenillustration; keine
           Gameforge-Bilddateien.
