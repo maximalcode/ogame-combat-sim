@@ -2,7 +2,7 @@
 
 `combat-cli report` imports one combat (`cr-…`) or espionage (`sr-…`) report ID.
 Recycler reports are not supported. This is separate from offline pasted-text
-import (#21), and adds neither a public HTTP route nor browser UI.
+import (#21), and shares its client and sanitizer with the Dock browser import.
 
 Store the ID in a private local text file outside version control, then run:
 
@@ -112,3 +112,36 @@ distinguish standalone calculators from scraping or game-interface tools;
 the [submission template](https://forum.origin.ogame.gameforge.com/forum/thread/332-tool-submission-template/)
 describes disclosures needed if that scope changes. This importer does not
 enumerate reports, scrape accounts or run background refreshes.
+
+## Dock attack scenarios
+
+The German Dock UI accepts a manually pasted `sr-` or `cr-` key, or `SR_KEY`
+in the URL fragment (`#SR_KEY=…`) or query. Prefer the fragment: query parameters
+reach the web server before JavaScript can remove them, so hosting access logs
+must exclude query strings. The page removes the key from its current address,
+uses a no-referrer policy, and waits for **Bericht übertragen & laden** before
+sending it. Keys are cleared after success and never written to browser storage.
+
+`POST /api/reports/import` accepts `{ "key": "…", "consent": true }`.
+The adapter limits request bodies to 1 KiB and concurrent imports to two,
+returns `Cache-Control: no-store`, and preserves the existing client's fixed
+provider, timeout, response limit, rolling quota, redaction and no-retry policy.
+There is no request-body logging. Synthetic local-provider tests need no live proxy.
+
+Only one defender can be imported; multi-participant combat reports are rejected.
+The unchanged sanitized candidate remains available in memory for inspection.
+The scenario takes revealed compositions and researched espionage technology;
+known report class IDs use the completion contract (alliance 2 = Warrior).
+Ambiguous combat technology and lifeform modifiers are not inferred; missing
+classes are explicitly assumed to be none.
+Unresolved numeric modifiers stay blank, with the existing Assumed zero behavior.
+Unknown compositions are explicitly described as unknown; absent units do not
+participate in this exploratory scenario. Original evidence is not rewritten.
+
+Import replaces only the opponent. Current planner universe settings remain in
+use, explicitly labeled as not resolved from this report, and can be inspected
+and edited under Universum & Kampfregeln. No current metadata is misrepresented
+as historical evidence. This intentionally does not call #63's strict completion
+or #65's acknowledged universe resolution; it never emits Verified battle input
+or a comparison. #67's visibility/evidence rules are preserved through the shared
+parser. Simulation remains a separate explicit action.

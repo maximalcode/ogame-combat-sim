@@ -5,6 +5,8 @@
 //! CPU-bound engine away from Tokio's request executor and, unlike an aborted
 //! async future, keeps the admission permit until the computation really ends.
 
+mod reports;
+
 use axum::{
     Json, Router,
     http::{Method, StatusCode, header},
@@ -176,6 +178,7 @@ pub struct AppState {
     accepting: Arc<AtomicBool>,
     workers: Arc<WorkerTracker>,
     runner: Arc<dyn SimulationRunner>,
+    reports: reports::ReportState,
 }
 
 impl AppState {
@@ -192,6 +195,7 @@ impl AppState {
             accepting: Arc::new(AtomicBool::new(true)),
             workers: Arc::new(WorkerTracker::new()),
             runner,
+            reports: reports::ReportState::new(),
         }
     }
 
@@ -224,6 +228,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(health))
         .route("/api/simulate", post(simulate))
+        .merge(reports::routes())
         .layer(cors)
         .with_state(state)
 }

@@ -18,6 +18,7 @@ name = "combat-api"
 path = "src/main.rs"
 
 [dependencies]
+combat-ogame-api = { path = "../combat-ogame-api", version = "0.1.0" }
 combat-core = { path = "../combat-core", version = "0.1.0" }
 combat-types = { path = "../combat-types", version = "0.1.0" }
 axum = { workspace = true }
@@ -28,4 +29,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 tower = { workspace = true, features = ["util"] }

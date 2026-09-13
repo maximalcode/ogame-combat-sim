@@ -5,6 +5,7 @@ import { NumberField } from "@/planner/NumberField";
 import { emptyScenario, makeRequest } from "@/planner/model";
 import { Results, type Run } from "@/planner/Results";
 import "@/planner/planner.css";
+import { ReportImport } from "@/planner/ReportImport";
 import { readAgr } from "@/planner/agr";
 
 export function App() {
@@ -92,6 +93,9 @@ export function App() {
             </ul>
           </details>
         )}
+        <ReportImport defender={scenario.defender} onImport={(defender) => {
+          setScenario((previous) => ({ ...previous, defender }));
+        }} />
         <div className="fleet-pair">
           <FleetPanel
             attacker
