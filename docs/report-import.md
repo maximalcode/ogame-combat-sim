@@ -135,6 +135,7 @@ known report class IDs use the completion contract (alliance 2 = Warrior).
 Ambiguous combat technology and lifeform modifiers are not inferred; missing
 classes are explicitly assumed to be none.
 Unresolved numeric modifiers stay blank, with the existing Assumed zero behavior.
+Missiles (502/503) remain in the candidate but are excluded from fleet combat.
 Unknown compositions are explicitly described as unknown; absent units do not
 participate in this exploratory scenario. Original evidence is not rewritten.
 

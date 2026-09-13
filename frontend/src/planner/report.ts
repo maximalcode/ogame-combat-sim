@@ -1,6 +1,6 @@
 import { apiUrl } from "@/config";
 import { availableTypes } from "./catalog";
-import { blankNumbers, emptyScenario, type Fleet } from "./model";
+import { blankNumbers, emptyScenario, MAX_COUNT, type Fleet } from "./model";
 
 interface Participant {
   character_class_id: number | null;
@@ -78,6 +78,8 @@ export function reportFleet(candidate: ReportCandidate): Fleet {
     "none";
   const composition = participant.entities ?? { ...participant.ships, ...participant.defenses };
   for (const [id, count] of Object.entries(composition)) {
+    // Missiles remain report evidence but cannot participate in fleet combat.
+    if (["502", "503"].includes(id)) continue;
     if (!availableTypes(false).some((unit) => unit.id === id))
       throw new Error("Bericht enthält nicht unterstützte Einheiten.");
     fleet.units.push({
@@ -135,7 +137,7 @@ function isCandidate(value: unknown): value is ReportCandidate {
           (typeof entry === "object" &&
             !Array.isArray(entry) &&
             Object.values(entry).every(
-              (count) => Number.isInteger(count) && count >= 0 && count <= 4294967295,
+              (count) => Number.isInteger(count) && count >= 0 && count <= MAX_COUNT,
             )),
       ) &&
       [

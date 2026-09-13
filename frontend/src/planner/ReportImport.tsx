@@ -114,7 +114,8 @@ export function ReportImport({
             angenommen. Unklare Kampfforschung und Lebensformwerte bleiben leer (Assumed zero).
             Bekannte Spieler- und Allianzklassen werden übernommen. Fehlende Klassen gelten als
             „keine“; bitte prüfen. Zusammengesetzte Booster werden nicht als Lebensformprozente
-            verwendet.
+            verwendet. Raketen bleiben in den Importdaten erhalten und nehmen nicht am Flottenkampf
+            teil.
           </p>
           <p>
             Universum: Die bisherigen Werte unter „Universum & Kampfregeln“ bleiben in Verwendung;

@@ -29,7 +29,18 @@ test("SR_KEY requires transfer action, preserves own fleet, exposes unknowns and
   const simulations: CombatRequest[] = [];
   await page.route("**/api/reports/import", async (route) => {
     imports.push(route.request().postDataJSON());
-    await route.fulfill({ json: candidate });
+    await route.fulfill({
+      json: {
+        ...candidate,
+        defenders: [
+          {
+            ...candidate.defenders[0],
+            entities: { "204": 12, "401": 6, "502": 10, "503": 0 },
+            defenses: { "401": 6, "502": 10, "503": 0 },
+          },
+        ],
+      },
+    });
   });
   await page.route("**/api/simulate", async (route) => {
     simulations.push(route.request().postDataJSON());
@@ -62,12 +73,15 @@ test("SR_KEY requires transfer action, preserves own fleet, exposes unknowns and
   expect(simulations).toHaveLength(0);
   await page.getByRole("button", { name: "Simulieren", exact: true }).click();
   await expect(page.getByRole("region", { name: "Ergebnis", exact: true })).toContainText("75 %");
-  expect(simulations[0].defender.technology).toMatchObject({ weapon: 8, shield: 0, armour: 0 });
-  expect(simulations[0].defender_bonuses).toEqual({
+  const simulation = simulations[0];
+  if (!simulation) throw new Error("Simulation request missing");
+  expect(simulation.defender.entities).toEqual({ "204": 12, "401": 6 });
+  expect(simulation.defender.technology).toMatchObject({ weapon: 8, shield: 0, armour: 0 });
+  expect(simulation.defender_bonuses).toEqual({
     player_class: "general",
     alliance_class: "warrior",
   });
-  expect(simulations[0].defender.lifeform["204"].weapon).toBe(0);
+  expect(simulation.defender.lifeform?.["204"]?.weapon).toBe(0);
   await page.route("**/api/reports/import", (route) => route.fulfill({ status: 502 }));
   await page.getByLabel("Berichtsschlüssel (sr- oder cr-)").fill(key);
   await page.getByRole("button", { name: "Bericht übertragen & laden" }).click();
