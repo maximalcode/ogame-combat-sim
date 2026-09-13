@@ -133,6 +133,7 @@ function UnitRow({
           <button
             type="button"
             aria-label={`${name} weniger`}
+            disabled={unit.selected === ""}
             onClick={() => {
               changeQuantity(String(Number(unit.selected) - 1));
             }}
@@ -148,6 +149,7 @@ function UnitRow({
           <button
             type="button"
             aria-label={`${name} mehr`}
+            disabled={unit.selected === ""}
             onClick={() => {
               changeQuantity(String(Number(unit.selected) + 1));
             }}

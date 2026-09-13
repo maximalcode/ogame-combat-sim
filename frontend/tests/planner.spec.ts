@@ -141,6 +141,8 @@ test("blank quantities stay visible and zero selection can be restored", async (
   await add(own, "206", "");
   await expect(own.getByLabel("Kreuzer Menge", { exact: true })).toHaveValue("");
   await expect(own.locator("tbody")).toContainText("Assumed zero");
+  await expect(own.getByRole("button", { name: "Kreuzer weniger" })).toBeDisabled();
+  await expect(own.getByRole("button", { name: "Kreuzer mehr" })).toBeDisabled();
   await own.getByRole("button", { name: "½ Menge" }).click();
   await own.getByRole("button", { name: "+10 %" }).click();
   await expect(own.getByLabel("Kreuzer Menge", { exact: true })).toHaveValue("");
