@@ -1,8 +1,8 @@
 # Frontend (web UI)
 
 A React + Vite + Tailwind app that talks to `combat-api`. This directory holds
-the app shell, build tooling, typed API client, fleet-entry surface (multi-slot
-ACS composition), technology and planet-resource surface, and results display.
+the production Dock planner, build tooling, and typed API client. Older ACS
+and detailed-report components remain available in the source tree.
 
 ## Stack
 
@@ -39,13 +39,44 @@ alongside it:
 cargo run -p combat-api
 ```
 
-Then open http://localhost:5173, compose the two fleets (each side supports
-multiple ACS slots), set each side's combat technology levels — and, if the
-defending planet is known, its resources — and click **Simulate**. The results
-surface renders the outcome distribution alongside its economics, ship losses,
-debris, loot and profit. Opening **Round detail** runs one representative
-battle with per-round composition tracking; aggregate simulations do not pay
-that extra cost.
+Then open http://localhost:5173. The production entry is the German Dock planner
+selected in issue #72, based on local prototype commits `89cd311` and `3cac91b`.
+Add only the units you want to plan with through the manual picker. Your own
+available fleet is a snapshot; changing selected quantities never changes it.
+Restore affects only quantities. Empty numeric fields remain blank and visibly
+marked **Assumed zero**; conversion to zero happens when building an attack
+scenario for the API. They are not verified observed inputs.
+
+Combat research, player/alliance classes, per-unit lifeform combat percentages,
+rapid fire, and universe debris rules are supported. Only **Simulieren** sends a
+request (100 or 1,000 runs). Failed requests retain inputs and the last success;
+changed inputs mark that result as outdated. The result is a partial profit:
+all debris minus attacker losses, without loot, fuel, or rebuild. Fleet count
+averages in the API summary truncate units, so the displayed loss average uses
+the per-run economic identity instead. No ACS, import, account sync, or flight
+controls are exposed in this manual flow.
+
+The fleet marker is original local vector artwork. See
+[art provenance](public/art/README.md); no external image host is contacted.
+
+## Browser checks
+
+```sh
+npm ci
+npx playwright install chromium
+npm test
+npm run lint
+npm run build
+# With combat-api running on port 3000:
+LIVE_API=1 npm test -- --grep 'real local API smoke'
+```
+
+The deterministic browser suite intercepts the HTTP simulation route, verifying
+input bounds, request contents, explicit starts, errors, keyboard navigation,
+and layouts at 1440px and 1024px with image loading blocked. The separate live
+smoke checks transport and rendered completion without random outcome assertions.
+Set `PLAYWRIGHT_CHROME` to an installed Chromium executable if bundled browser
+downloads are unavailable. CI runs the deterministic suite, lint, and build.
 
 ## Configuration
 
@@ -85,8 +116,8 @@ docker buildx build --load --platform linux/arm64 \
 
 ## Linting
 
-CI runs `npm ci && npm run lint` in this directory and nothing else, so `lint`
-is the whole TypeScript gate — `--max-warnings 0` is load-bearing, because
+CI runs lint, build/typechecking, and browser tests. In lint,
+`--max-warnings 0` is load-bearing, because
 `no-console` is a warning and without the flag it never fails.
 
 `eslint.base.mjs` and `tsconfig.base.json` are **copied from maxi-quality by its
@@ -96,7 +127,11 @@ root `Cargo.toml` (see `CLAUDE.md`). Repo-specific choices go in
 overrides only what a browser app genuinely needs to differ on (DOM lib, bundler
 resolution, JSX, no emit); none of the baseline's strict family is relaxed.
 
-## Layout
+## Source layout
+
+The production entry is `App.tsx` and `planner/` (scenario model, manual fleet
+editor, numeric fields, and results). The older components listed below remain
+in the source tree but are not mounted by the Dock entry.
 
 ```
 src/
@@ -132,6 +167,5 @@ src/
 └── index.css         # Tailwind entry
 ```
 
-Each of the three regions is its own component file and owns none of the
-others' logic. Deeper component folders keep each region's rendering details
-behind that established seam.
+The planner owns its scenario in `App.tsx`; presentation components receive
+values and callbacks. The API request is built at the scenario boundary.

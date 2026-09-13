@@ -1,156 +1,157 @@
-// App shell: the layout skeleton and the only place that owns simulation
-// state.
-//
-// Three regions — fleet entry, technology input, results — each live in their
-// own component file and own no shared state. This component holds the fleet
-// state (issue #23) and both result requests. The normal request stays lean;
-// one representative battle asks for per-round compositions only when that
-// view opens.
-
-import { useCallback, useState } from "react";
-import { FleetEntry } from "@/components/FleetEntry";
-import { TechnologyInput } from "@/components/TechnologyInput";
-import {
-  ResultsPanel,
-  type ResultsState,
-  type ResultsView,
-} from "@/components/ResultsPanel";
-import type { RoundResultsState } from "@/components/results/RoundCompositionView";
-import { ApiError, postSimulate } from "@/api/client";
-import type { CombatRequest } from "@/api/types";
-import {
-  buildCombatRequest,
-  emptySlot,
-  isSideEmpty,
-  type FleetState,
-} from "@/fleet/types";
-import { API_BASE_URL, isSameOrigin } from "@/config";
-import { DEFAULT_COMBAT_INPUT } from "@/combat/input";
-
-/**
- * The fleet the shell opens with — the demo matchup the shell already shipped
- * (100 Cruisers vs 1000 Light Fighters), now expressed as one slot per side.
- * One slot means the simple party shape, so this still round-trips the same
- * request the shell proved; adding a slot on either side switches to the
- * multi-slot shape without the App knowing or caring.
- */
-const INITIAL_FLEET: FleetState = {
-  attacker: [{ ...emptySlot("A1"), entities: { "206": 100 } }],
-  defender: [{ ...emptySlot("D1"), entities: { "204": 1000 } }],
-};
-
-function asApiError(error: unknown): ApiError {
-  const message = error instanceof Error ? error.message : String(error);
-  return error instanceof ApiError ? error : new ApiError(message, 0, "(client)");
-}
+import { useRef, useState } from "react";
+import { postSimulate } from "@/api/client";
+import { FleetPanel } from "@/planner/FleetPanel";
+import { NumberField } from "@/planner/NumberField";
+import { emptyScenario, makeRequest } from "@/planner/model";
+import { Results, type Run } from "@/planner/Results";
+import "@/planner/planner.css";
 
 export function App() {
-  const [fleet, setFleet] = useState<FleetState>(INITIAL_FLEET);
-  const [combatInput, setCombatInput] = useState(DEFAULT_COMBAT_INPUT);
-  const [results, setResults] = useState<ResultsState>({ kind: "idle" });
-  const [resultsView, setResultsView] = useState<ResultsView>("summary");
-  const [roundResults, setRoundResults] = useState<RoundResultsState>({ kind: "idle" });
-
-  const attackerEmpty = isSideEmpty(fleet.attacker);
-  const defenderEmpty = isSideEmpty(fleet.defender);
-  const emptySide = attackerEmpty || defenderEmpty;
-
-  const runSimulation = useCallback(async () => {
-    if (emptySide) return;
-    const request = buildCombatRequest(fleet, combatInput);
-    setResults({ kind: "loading" });
-    setResultsView("summary");
-    setRoundResults({ kind: "idle" });
+  const [scenario, setScenario] = useState(emptyScenario);
+  const [simulations, setSimulations] = useState(100);
+  const [run, setRun] = useState<Run | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const running = useRef(false);
+  const signature = JSON.stringify({ scenario, simulations });
+  const empty = [scenario.attacker, scenario.defender].some(
+    (fleet) => !fleet.units.some((unit) => Number(unit.selected) > 0),
+  );
+  async function simulate() {
+    if (running.current || empty) return;
+    running.current = true;
+    setBusy(true);
+    setError("");
     try {
-      const response = await postSimulate(request);
-      setResults({ kind: "ok", response, request });
-    } catch (error) {
-      setResults({ kind: "error", error: asApiError(error) });
+      const response = await postSimulate(makeRequest(scenario, simulations));
+      setRun({ response, signature });
+    } catch {
+      setError(
+        "Die Simulation ist fehlgeschlagen. Deine Eingaben und das letzte erfolgreiche Ergebnis bleiben erhalten. Bitte erneut versuchen.",
+      );
+    } finally {
+      running.current = false;
+      setBusy(false);
     }
-  }, [combatInput, emptySide, fleet]);
-
-  const runRoundSimulation = useCallback(async (request: CombatRequest) => {
-    setRoundResults({ kind: "loading" });
-    try {
-      const response = await postSimulate({
-        ...request,
-        simulations: 1,
-        enable_round_compositions: true,
-      });
-      setRoundResults({ kind: "ok", response });
-    } catch (error) {
-      setRoundResults({ kind: "error", error: asApiError(error) });
-    }
-  }, []);
-
-  const selectRoundView = useCallback(() => {
-    setResultsView("rounds");
-    if (
-      results.kind === "ok" &&
-      roundResults.kind !== "loading" &&
-      roundResults.kind !== "ok"
-    ) {
-      void runRoundSimulation(results.request);
-    }
-  }, [results, roundResults.kind, runRoundSimulation]);
-
-  let emptyMessage = "The defender fleet is empty";
-  if (attackerEmpty && defenderEmpty) {
-    emptyMessage = "Both fleets are empty";
-  } else if (attackerEmpty) {
-    emptyMessage = "The attacker fleet is empty";
   }
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/60">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <h1 className="text-lg font-semibold">OGame Combat Simulator</h1>
-          <span className="font-mono text-xs text-slate-500">
-            API: {isSameOrigin ? "same-origin" : API_BASE_URL}
-          </span>
-        </div>
+    <div className="planner">
+      <header className="app-header">
+        <span className="brand">
+          ◈ ORBIT <small>Kampfsimulator</small>
+        </span>
+        <span>Manueller Angriffsplaner</span>
       </header>
-
-      <main className="mx-auto max-w-5xl space-y-4 px-4 py-6">
-        <FleetEntry value={fleet} onChange={setFleet} />
-        <TechnologyInput value={combatInput} onChange={setCombatInput} />
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-3">
+      <main>
+        <div className="workspace-title">
+          <span className="eyebrow">FLOTTENPLANUNG / DOCK</span>
+          <h1>Bereit für den Angriff.</h1>
+          <p>Bestand ergänzen. Flotte wählen. Chancen prüfen.</p>
+        </div>
+        <div className="fleet-pair">
+          <FleetPanel
+            attacker
+            fleet={scenario.attacker}
+            onChange={(attacker) => {
+              setScenario({ ...scenario, attacker });
+            }}
+          />
+          <FleetPanel
+            attacker={false}
+            fleet={scenario.defender}
+            onChange={(defender) => {
+              setScenario({ ...scenario, defender });
+            }}
+          />
+        </div>
+        <details className="universe">
+          <summary>Universum & Kampfregeln</summary>
+          <div className="universe-fields">
+            <NumberField
+              label="Flotte ins Trümmerfeld %"
+              value={scenario.debrisFleet}
+              max={100}
+              onChange={(debrisFleet) => {
+                setScenario({ ...scenario, debrisFleet });
+              }}
+            />
+            <NumberField
+              label="Verteidigung ins Trümmerfeld %"
+              value={scenario.debrisDefence}
+              max={100}
+              onChange={(debrisDefence) => {
+                setScenario({ ...scenario, debrisDefence });
+              }}
+            />
+            <label>
+              <input
+                type="checkbox"
+                checked={scenario.deuterium}
+                onChange={(event) => {
+                  setScenario({ ...scenario, deuterium: event.target.checked });
+                }}
+              />{" "}
+              Deuterium im TF
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={scenario.rapidFire}
+                onChange={(event) => {
+                  setScenario({ ...scenario, rapidFire: event.target.checked });
+                }}
+              />{" "}
+              Rapidfire
+            </label>
+          </div>
+        </details>
+        <p className="assumption-note">
+          Leere Zahlenfelder sind rot markiert: Assumed zero (angenommen: 0). Erst das
+          Angriffsszenario rechnet mit 0; dies ist keine verifizierte Rekonstruktion.
+        </p>
+        <div className="launch-deck">
+          <Results run={run} dirty={run !== null && run.signature !== signature} />
+          <div className="controls">
+            <span className="eyebrow">DURCHLÄUFE</span>
+            <div className="run-options">
+              {[100, 1000].map((count) => (
+                <button
+                  type="button"
+                  key={count}
+                  aria-pressed={simulations === count}
+                  onClick={() => {
+                    setSimulations(count);
+                  }}
+                >
+                  {count.toLocaleString("de-DE")}
+                </button>
+              ))}
+            </div>
+            {empty && <small>Auf beiden Seiten werden Einheiten benötigt.</small>}
             <button
               type="button"
+              className="simulate"
+              disabled={busy || empty}
               onClick={() => {
-                void runSimulation();
+                void simulate();
               }}
-              disabled={
-                results.kind === "loading" || roundResults.kind === "loading" || emptySide
-              }
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {results.kind === "loading" ? "Simulating…" : "Simulate"}
+              {busy ? "Wird berechnet…" : "Simulieren"}
             </button>
-            <p className="text-xs text-slate-500">
-              Runs 100 battles for a distribution. Round compositions are requested separately, only when opened.
-            </p>
           </div>
-          {emptySide && (
-            <p className="text-xs text-amber-400" role="status">
-              {emptyMessage} — add at least one ship before simulating.
-            </p>
-          )}
         </div>
-
-        <ResultsPanel
-          state={results}
-          view={resultsView}
-          roundState={roundResults}
-          onSelectSummary={() => {
-            setResultsView("summary");
-          }}
-          onSelectRounds={selectRoundView}
-          onRetryRounds={selectRoundView}
-        />
+        {error && (
+          <p role="alert" className="error">
+            {error}
+          </p>
+        )}
+        <footer>
+          Available fleet: manuell gelieferter Snapshot · Selected attacking fleet: deine Auswahl
+          daraus. Kein Live-Inventar.
+          <br />
+          Inoffizielles Fan-Tool. Eigene schematische Flottenillustration; keine
+          Gameforge-Bilddateien.
+        </footer>
       </main>
     </div>
   );

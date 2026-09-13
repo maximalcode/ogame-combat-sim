@@ -35,3 +35,5 @@ npm-debug.log*
 Thumbs.db
 # Editor workspace files can reference private sibling repos — keep them out.
 *.code-workspace
+/frontend/test-results/
+/frontend/playwright-report/
