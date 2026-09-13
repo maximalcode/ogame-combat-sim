@@ -141,6 +141,9 @@ test("blank quantities stay visible and zero selection can be restored", async (
   await add(own, "206", "");
   await expect(own.getByLabel("Kreuzer Menge", { exact: true })).toHaveValue("");
   await expect(own.locator("tbody")).toContainText("Assumed zero");
+  await own.getByRole("button", { name: "½ Menge" }).click();
+  await own.getByRole("button", { name: "+10 %" }).click();
+  await expect(own.getByLabel("Kreuzer Menge", { exact: true })).toHaveValue("");
   await expect(page.getByRole("button", { name: "Simulieren", exact: true })).toBeDisabled();
 });
 
@@ -173,16 +176,16 @@ test("real local API smoke", async ({ page }) => {
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test('manual snapshot corrections and defender quantities stay editable', async ({ page }) => {
+test("manual snapshot corrections and defender quantities stay editable", async ({ page }) => {
   const { own, enemy } = await prepare(page);
-  await own.locator('.unit-picker summary').click();
-  await own.getByLabel('Bestand Kreuzer', { exact: true }).fill('40');
-  await expect(own.getByLabel('Kreuzer Menge', { exact: true })).toHaveValue('40');
-  await own.getByLabel('Bestand Kreuzer', { exact: true }).fill('80');
-  await expect(own.getByLabel('Kreuzer Menge', { exact: true })).toHaveValue('40');
-  await own.getByRole('button', { name: 'Wiederherstellen' }).click();
-  await expect(own.getByLabel('Kreuzer Menge', { exact: true })).toHaveValue('80');
-  await enemy.getByLabel('Leichter Jäger Menge', { exact: true }).fill('2000');
-  await enemy.getByRole('button', { name: 'Leichter Jäger weniger' }).click();
-  await expect(enemy.getByLabel('Leichter Jäger Menge', { exact: true })).toHaveValue('1999');
+  await own.locator(".unit-picker summary").click();
+  await own.getByLabel("Bestand Kreuzer", { exact: true }).fill("40");
+  await expect(own.getByLabel("Kreuzer Menge", { exact: true })).toHaveValue("40");
+  await own.getByLabel("Bestand Kreuzer", { exact: true }).fill("80");
+  await expect(own.getByLabel("Kreuzer Menge", { exact: true })).toHaveValue("40");
+  await own.getByRole("button", { name: "Wiederherstellen" }).click();
+  await expect(own.getByLabel("Kreuzer Menge", { exact: true })).toHaveValue("80");
+  await enemy.getByLabel("Leichter Jäger Menge", { exact: true }).fill("2000");
+  await enemy.getByRole("button", { name: "Leichter Jäger weniger" }).click();
+  await expect(enemy.getByLabel("Leichter Jäger Menge", { exact: true })).toHaveValue("1999");
 });

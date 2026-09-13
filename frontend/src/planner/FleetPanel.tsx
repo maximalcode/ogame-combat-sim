@@ -5,7 +5,7 @@ import {
   MAX_COUNT,
   restoreSelection,
   scaleSelection,
-  numericInput,
+  selectQuantity,
   STATS,
   type Fleet,
   type Unit,
@@ -27,9 +27,7 @@ function UnitPicker({ attacker, fleet, onChange }: Readonly<Props>) {
     onChange({
       ...fleet,
       units: fleet.units.map((unit) =>
-        unit.id === id
-          ? { ...unit, available, selected: numericInput(unit.selected, Number(available)) }
-          : unit,
+        unit.id === id ? selectQuantity({ ...unit, available }, unit.selected) : unit,
       ),
     });
   };
@@ -102,6 +100,10 @@ function UnitRow({
   readonly change: (unit: Unit) => void;
 }) {
   const name = unitName(unit.id);
+  const maximum = attacker ? Number(unit.available) : MAX_COUNT;
+  const changeQuantity = (value: string) => {
+    change(selectQuantity(unit, value, maximum));
+  };
   return (
     <tr>
       <th scope="row">
@@ -132,13 +134,7 @@ function UnitRow({
             type="button"
             aria-label={`${name} weniger`}
             onClick={() => {
-              change({
-                ...unit,
-                selected: numericInput(
-                  String(Number(unit.selected) - 1),
-                  attacker ? Number(unit.available) : MAX_COUNT,
-                ),
-              });
+              changeQuantity(String(Number(unit.selected) - 1));
             }}
           >
             −
@@ -146,24 +142,14 @@ function UnitRow({
           <NumberField
             label={`${name} Menge`}
             value={unit.selected}
-            max={attacker ? Number(unit.available) : MAX_COUNT}
-            onChange={(value) => {
-              change({ ...unit, selected: value });
-            }}
+            max={maximum}
+            onChange={changeQuantity}
           />
           <button
             type="button"
             aria-label={`${name} mehr`}
             onClick={() => {
-              change({
-                ...unit,
-                selected: String(
-                  Math.min(
-                    attacker ? Number(unit.available) : MAX_COUNT,
-                    Number(unit.selected) + 1,
-                  ),
-                ),
-              });
+              changeQuantity(String(Number(unit.selected) + 1));
             }}
           >
             +

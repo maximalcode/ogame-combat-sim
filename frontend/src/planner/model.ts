@@ -51,14 +51,16 @@ export function numericInput(raw: string, max: number, integer = true): string {
   if (!Number.isFinite(value)) return "";
   return String(Math.max(0, Math.min(max, integer ? Math.floor(value) : value)));
 }
-export function selectQuantity(unit: Unit, raw: string): Unit {
-  return { ...unit, selected: numericInput(raw, Number(unit.available)) };
+export function selectQuantity(unit: Unit, raw: string, maximum = Number(unit.available)): Unit {
+  return { ...unit, selected: numericInput(raw, maximum) };
 }
 export function scaleSelection(fleet: Fleet, factor: number): Fleet {
   return {
     ...fleet,
     units: fleet.units.map((unit) =>
-      selectQuantity(unit, String(Math.floor(Number(unit.selected) * factor))),
+      unit.selected === ""
+        ? unit
+        : selectQuantity(unit, String(Math.floor(Number(unit.selected) * factor))),
     ),
   };
 }
