@@ -446,3 +446,11 @@
   color: var(--muted);
   font-size: 12px;
 }
+
+.agr-source {
+  margin-bottom: 20px;
+}
+.agr-source p,
+.agr-source ul {
+  margin-top: 8px;
+}

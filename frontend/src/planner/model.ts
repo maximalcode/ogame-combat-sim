@@ -1,4 +1,10 @@
-import type { AllianceClass, CombatRequest, PlayerClass } from "@/api/types";
+import type {
+  AllianceClass,
+  CombatRequest,
+  PlayerClass,
+  UniverseSettings,
+  Technology,
+} from "@/api/types";
 
 export const STATS = [
   ["weapon", "Waffen"],
@@ -14,12 +20,14 @@ export interface Unit {
   lifeform: Numbers;
 }
 export interface Fleet {
+  importedTechnology?: Partial<Technology>;
   units: Unit[];
   technology: Numbers;
   playerClass: PlayerClass;
   allianceClass: AllianceClass;
 }
 export interface Scenario {
+  importedUniverse?: UniverseSettings;
   attacker: Fleet;
   defender: Fleet;
   debrisFleet: string;
@@ -74,7 +82,7 @@ const numbers = (values: Numbers) => ({
 });
 export function makeRequest(scenario: Scenario, simulations: number): CombatRequest {
   const party = (fleet: Fleet) => ({
-    technology: numbers(fleet.technology),
+    technology: { ...fleet.importedTechnology, ...numbers(fleet.technology) },
     entities: Object.fromEntries(fleet.units.map((unit) => [unit.id, Number(unit.selected)])),
     lifeform: Object.fromEntries(fleet.units.map((unit) => [unit.id, numbers(unit.lifeform)])),
   });
@@ -90,6 +98,7 @@ export function makeRequest(scenario: Scenario, simulations: number): CombatRequ
     simulations,
     use_rapid_fire: scenario.rapidFire,
     universe_settings: {
+      ...scenario.importedUniverse,
       debris_fleet: Number(scenario.debrisFleet),
       debris_defence: Number(scenario.debrisDefence),
       debris_deuterium: scenario.deuterium,
