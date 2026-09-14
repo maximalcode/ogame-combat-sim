@@ -3,7 +3,8 @@ import { postSimulate } from "@/api/client";
 import { FleetPanel } from "@/planner/FleetPanel";
 import { NumberField } from "@/planner/NumberField";
 import { emptyScenario, makeRequest } from "@/planner/model";
-import { Results, type Run } from "@/planner/Results";
+import { Results } from "@/planner/Results";
+import { averages, type Attempts } from "@/planner/attempts";
 import "@/planner/planner.css";
 import { ReportImport } from "@/planner/ReportImport";
 import { readAgr } from "@/planner/agr";
@@ -11,7 +12,8 @@ import { readAgr } from "@/planner/agr";
 export function App() {
   const [scenario, setScenario] = useState(emptyScenario);
   const [simulations, setSimulations] = useState(100);
-  const [run, setRun] = useState<Run | null>(null);
+  const [attempts, setAttempts] = useState<Attempts>({ latest: null, previous: null });
+  const nextAttempt = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const running = useRef(false);
@@ -48,9 +50,11 @@ export function App() {
     running.current = true;
     setBusy(true);
     setError("");
+    const job = { number: ++nextAttempt.current, request: makeRequest(scenario, simulations), signature };
     try {
-      const response = await postSimulate(makeRequest(scenario, simulations));
-      setRun({ response, signature });
+      const response = await postSimulate(job.request);
+      averages(response);
+      setAttempts((previous) => ({ latest: { ...job, response }, previous: previous.latest }));
     } catch {
       setError(
         "Die Simulation ist fehlgeschlagen. Deine Eingaben und das letzte erfolgreiche Ergebnis bleiben erhalten. Bitte erneut versuchen.",
@@ -158,7 +162,7 @@ export function App() {
           Angriffsszenario rechnet mit 0; dies ist keine verifizierte Rekonstruktion.
         </p>
         <div className="launch-deck">
-          <Results run={run} dirty={run !== null && run.signature !== signature} />
+          <Results attempts={attempts} signature={signature} />
           <div className="controls">
             <span className="eyebrow">DURCHLÄUFE</span>
             <div className="run-options">

@@ -169,3 +169,18 @@ src/
 
 The planner owns its scenario in `App.tsx`; presentation components receive
 values and callbacks. The API request is built at the scenario boundary.
+
+## Comparing attempts
+
+Each explicit start captures the editor state and a detached API request,
+including classes, lifeforms, universe rules and the requested sample size.
+The last two successful attempts remain available with their launch inputs.
+Edits mark the latest result stale, including when its response arrives after
+an edit; they never start another request. Failed requests do not advance the
+comparison. Attempt numbers include failed starts, so gaps are intentional.
+
+The Dock averages resource losses, profit and debris from individual battle
+results before formatting to two decimal places. It does not value the summary
+report's truncated average ship losses. Profit assumes full debris collection
+and excludes loot, fuel and rebuild in the current planner. Results and history
+are kept only for the current page session.
