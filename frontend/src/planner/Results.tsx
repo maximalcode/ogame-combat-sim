@@ -1,4 +1,4 @@
-import { averages, format, signed, type Attempts, type Run } from "@/planner/attempts";
+import { validateAndAverage, format, signed, type Attempts, type Run } from "@/planner/attempts";
 import type { AllianceClass, PlayerClass } from "@/api/types";
 import { unitName } from "@/planner/catalog";
 
@@ -46,7 +46,7 @@ function Comparison({ latest, previous }: { readonly latest: Run; readonly previ
         <thead><tr><th>Versuch</th><th>Deine Verluste Ø</th><th>Teilgewinn Ø</th></tr></thead>
         <tbody>
           {[latest, previous].map((run, index) => {
-            const average = averages(run.response);
+            const average = validateAndAverage(run.response);
             return (
               <tr key={run.number}>
                 <th scope="row">{index === 0 ? "Letzter" : "Vorheriger"} · Versuch {run.number}</th>
@@ -65,7 +65,7 @@ function Comparison({ latest, previous }: { readonly latest: Run; readonly previ
 export function Results({ attempts, signature }: { readonly attempts: Attempts; readonly signature: string }) {
   const { latest: run, previous } = attempts;
   const results = run?.response.results;
-  const average = run ? averages(run.response) : null;
+  const average = run ? validateAndAverage(run.response) : null;
   const dirty = run !== null && run.signature !== signature;
   const currentLabel = run ? "Passend zu den aktuellen Eingaben" : "Nur Simulieren startet eine Berechnung";
   return (

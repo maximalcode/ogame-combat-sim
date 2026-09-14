@@ -15,7 +15,7 @@ export interface Attempts {
 const total = (resources: ResourceCost) =>
   resources.metal + resources.crystal + resources.deuterium;
 
-export function averages(response: SimulationResponse) {
+export function validateAndAverage(response: SimulationResponse) {
   const { results: battles, simulations, attacker_wins, defender_wins, draws } = response.results;
   const counts = [attacker_wins, defender_wins, draws];
   if (

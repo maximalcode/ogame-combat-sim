@@ -4,7 +4,7 @@ import { FleetPanel } from "@/planner/FleetPanel";
 import { NumberField } from "@/planner/NumberField";
 import { emptyScenario, makeRequest } from "@/planner/model";
 import { Results } from "@/planner/Results";
-import { averages, type Attempts } from "@/planner/attempts";
+import { validateAndAverage, type Attempts } from "@/planner/attempts";
 import "@/planner/planner.css";
 import { ReportImport } from "@/planner/ReportImport";
 import { readAgr } from "@/planner/agr";
@@ -53,7 +53,7 @@ export function App() {
     const job = { number: ++nextAttempt.current, request: makeRequest(scenario, simulations), signature };
     try {
       const response = await postSimulate(job.request);
-      averages(response);
+      validateAndAverage(response);
       setAttempts((previous) => ({ latest: { ...job, response }, previous: previous.latest }));
     } catch {
       setError(
