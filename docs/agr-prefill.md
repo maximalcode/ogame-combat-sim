@@ -10,7 +10,9 @@ extension or simulator code is included here.
 Configure the simulator base URL in AGR. It appends a language path and
 `#prefill=<base64 JSON>`. `/de` and `/pt-BR` therefore reach the same German
 planner. An optional `SR_KEY` query value refers to an opponent report, **not**
-the own fleet. This implementation never retrieves that key.
+the own fleet. The report importer offers a separate explicit transfer action;
+see [report import](report-import.md). Both parameters may also share the
+fragment in either order. Raw base64 plus signs must survive key removal.
 
 The [published prefill contract](https://battlesim.logserver.org/en/userprojects)
 uses root arrays `0` (attackers), `1` (defenders), and `settings`. Unit entries
