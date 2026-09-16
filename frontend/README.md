@@ -53,8 +53,10 @@ request (100 or 1,000 runs). Failed requests retain inputs and the last success;
 changed inputs mark that result as outdated. The result is a partial profit:
 all debris minus attacker losses, without loot, fuel, or rebuild. Fleet count
 averages in the API summary truncate units, so the displayed loss average uses
-the per-run economic identity instead. No ACS, import, account sync, or flight
-controls are exposed in this manual flow.
+the per-run economic identity instead. No ACS, account sync, or flight controls
+are exposed. AGR and opponent report imports populate this same planner; see
+[combined entry acceptance](../docs/entry-validation.md) for the full journey
+and its separate combat-evidence limits.
 
 The fleet marker is original local vector artwork. See
 [art provenance](public/art/README.md); no external image host is contacted.
