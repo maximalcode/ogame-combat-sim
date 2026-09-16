@@ -463,3 +463,11 @@
 .report-import input { width: 100%; padding: 8px; background: #09131e; color: #fff; border: 1px solid #607c98; }
 .report-source { margin-top: 16px; }
 .report-source pre { overflow: auto; max-height: 300px; font-size: 12px; }
+
+.results .negative, .results .metrics strong.negative { color: #ffaaa1; }
+.results .positive { color: var(--accent); }
+.results .stale { color: #ffd28c; font-weight: 650; }
+.attempt-inputs { margin-top: 16px; }
+.attempt-comparison { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+.attempt-comparison caption { text-align: left; color: var(--muted); font-size: 11px; margin-bottom: 8px; }
+.attempt-comparison td { font-variant-numeric: tabular-nums; }

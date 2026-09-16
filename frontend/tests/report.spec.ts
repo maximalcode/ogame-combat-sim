@@ -46,7 +46,7 @@ test("SR_KEY requires transfer action, preserves own fleet, exposes unknowns and
     simulations.push(route.request().postDataJSON());
     await route.fulfill({
       json: {
-        results: { simulations: 100, attacker_wins: 75, defender_wins: 15, draws: 10, results: [] },
+        results: { simulations: 100, attacker_wins: 75, defender_wins: 15, draws: 10, results: Array.from({ length: 100 }, () => ({ debris_field: { metal: 0, crystal: 0, deuterium: 0 }, loot: { metal: 0, crystal: 0, deuterium: 0 }, attacker_profit: 0 })) },
         report: {
           economics: { attacker_profit: 0, debris_field: { metal: 0, crystal: 0, deuterium: 0 } },
         },
