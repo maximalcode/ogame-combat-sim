@@ -96,22 +96,11 @@ fn workflow(args: &ReportArgs, comparison: bool) -> Result<String, String> {
         evidence: artifact.evidence,
         universe,
     };
-    if comparison
-        && (input.candidate.attackers.iter().any(|p| p.slot != "A1")
-            || input.candidate.defenders.iter().any(|p| p.slot != "D1"))
-    {
-        return Err("comparison requires canonical single-participant slots A1 and D1".to_owned());
-    }
     let result = complete_candidate(&input);
     if comparison {
         if let CompletionResult::Verified { input } = &result {
             let result = combat_ogame_api::reports::compare_battle(input).map_err(str::to_owned)?;
-            let machine = serde_json::to_string_pretty(&result)
-                .map_err(|_| "could not serialize comparison result".to_owned())?;
-            return Ok(format!(
-                "{}\nMachine-readable result:\n{machine}\n",
-                result.render_text()
-            ));
+            return render_comparison(&result);
         }
     }
     let machine = serde_json::to_string_pretty(&result)
@@ -162,4 +151,62 @@ struct CompletionArtifact {
     evidence: CompletionEvidence,
     #[serde(default)]
     universe: Option<PinnedUniverse>,
+}
+
+fn render_comparison(
+    result: &combat_ogame_api::reports::BattleComparison,
+) -> Result<String, String> {
+    let machine = serde_json::to_string_pretty(result)
+        .map_err(|_| "could not serialize comparison result".to_owned())?;
+    Ok(format!(
+        "{}\nMachine-readable result:\n{machine}\n",
+        result.render_text()
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_comparison;
+    use combat_ogame_api::reports::{EvidenceLedger, VerifiedBattleInput, compare_with};
+    use combat_types::{CombatRequest, SimulationResult};
+
+    #[test]
+    fn cli_renders_controlled_suspicion_ceiling_uncertainty_and_redaction() {
+        for (wins_per_hundred, status, runs) in [
+            (0, "suspicious", 200),
+            (5, "statistically_uncertain", 1000),
+            (100, "unremarkable", 50),
+        ] {
+            let input = VerifiedBattleInput {
+                request: CombatRequest::default(),
+                evidence: EvidenceLedger::default(),
+                observed: Some(
+                    serde_json::json!({"winner":"attacker", "report_id":"private-report-secret"}),
+                ),
+                assessment_limitations: vec![],
+            };
+            let mut index = 0;
+            let comparison = compare_with(&input, |request| {
+                (0..request.simulations).map(|_| {
+                    let outcome = if index % 100 < wins_per_hundred {"AttackersWin"} else {"Draw"};
+                    index += 1;
+                    serde_json::from_value::<SimulationResult>(serde_json::json!({
+                        "outcome":outcome,"rounds":6,"attacker_losses":{},"defender_losses":{},
+                        "attacker_remaining":{},"defender_remaining":{},
+                        "debris_field":{"metal":0,"crystal":0,"deuterium":0},
+                        "loot":{"metal":0,"crystal":0,"deuterium":0},"attacker_profit":0,"defender_profit":0
+                    })).unwrap()
+                }).collect()
+            }).unwrap();
+            let text = render_comparison(&comparison).unwrap();
+            assert!(text.contains(&format!("outcome: {status}")));
+            assert!(text.contains("not_assessable"));
+            assert!(!text.contains("private-report-secret"));
+            let machine: serde_json::Value =
+                serde_json::from_str(text.split("Machine-readable result:\n").nth(1).unwrap())
+                    .unwrap();
+            assert_eq!(machine["run_count"], runs);
+            assert_eq!(machine["metrics"][0]["status"], status);
+        }
+    }
 }

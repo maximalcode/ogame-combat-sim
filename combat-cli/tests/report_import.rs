@@ -256,7 +256,7 @@ fn report_complete_rejects_partial_lifeform_entries_at_the_cli_boundary() {
 #[test]
 fn report_compare_uses_completed_inputs_and_prints_private_diagnostics() {
     let path = std::env::temp_dir().join(format!("combat-cli-compare-{}.json", std::process::id()));
-    let artifact = serde_json::json!({
+    let mut artifact = serde_json::json!({
         "candidate": {
             "schema_version": 1,
             "report_kind": "combat",
@@ -301,4 +301,32 @@ fn report_compare_uses_completed_inputs_and_prints_private_diagnostics() {
     assert!(text.contains("Machine-readable result"));
     assert!(text.contains("starting_stats"));
     assert!(text.contains("evidence"));
+
+    // Unsupported participant shapes keep all of completion's structured issues.
+    let mut extra = artifact["candidate"]["attackers"][0].clone();
+    extra["slot"] = serde_json::json!("A2");
+    artifact["candidate"]["attackers"]
+        .as_array_mut()
+        .unwrap()
+        .push(extra);
+    artifact["universe"]["settings"] = serde_json::json!({});
+    std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
+    let mut results = Vec::new();
+    for action in ["complete", "compare"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_combat-cli"))
+            .args(["report", action, "--file"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let text = String::from_utf8(output.stdout).unwrap();
+        results.push(
+            text.split("Machine-readable result:\n")
+                .nth(1)
+                .unwrap()
+                .to_owned(),
+        );
+    }
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(results[0], results[1]);
 }

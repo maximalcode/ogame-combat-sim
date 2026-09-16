@@ -38,6 +38,7 @@ pub(super) fn losses(
             .collect();
         let observed_losses = round_losses(observed, side, slot, initial);
         let total = observed_losses.as_ref().map(|m| m.values().sum());
+        let first_count_metric = metrics.len();
         metrics.push(numeric(
             &format!("{side}.losses.count"),
             total,
@@ -59,6 +60,11 @@ pub(super) fn losses(
                     .collect(),
             ));
         }
+        if observed_losses.is_none() {
+            for metric in &mut metrics[first_count_metric..] {
+                "complete sequential combat rounds with explicit loss arrays and unique participant attribution are required; absent losses are not zero".clone_into(&mut metric.explanation);
+            }
+        }
         metrics.push(numeric(
             &format!("{side}.losses.resources"),
             observed[field].as_u64(),
@@ -66,13 +72,6 @@ pub(super) fn losses(
                 .map(|m| calculate_losses_value(m, entity_stats()))
                 .collect(),
         ));
-        if observed_losses.is_none() {
-            for metric in metrics.iter_mut().filter(|m| {
-                m.name.starts_with(&format!("{side}.losses.")) && !m.name.ends_with("resources")
-            }) {
-                "complete sequential combat rounds with explicit loss arrays and unique participant attribution are required; absent losses are not zero".clone_into(&mut metric.explanation);
-            }
-        }
     }
     metrics
 }
