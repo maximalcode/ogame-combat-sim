@@ -44,8 +44,20 @@ pub fn import(args: &ReportArgs) -> Result<String, String> {
 /// by future UI clients. The input contains a sanitized candidate, explicit
 /// evidence, and a pinned universe; it never accepts a `CombatRequest`.
 pub fn complete(args: &ReportArgs) -> Result<String, String> {
+    workflow(args, false)
+}
+
+pub fn compare(args: &ReportArgs) -> Result<String, String> {
+    if args.resolve_current {
+        return Err("report compare is offline; pin universe settings in the local completion artifact first".to_owned());
+    }
+    workflow(args, true)
+}
+
+fn workflow(args: &ReportArgs, comparison: bool) -> Result<String, String> {
     let path = args.file.as_ref().ok_or_else(|| {
-        "report complete requires --file PATH containing a completion artifact".to_owned()
+        "report completion/comparison requires --file PATH containing a completion artifact"
+            .to_owned()
     })?;
     let json = std::fs::read_to_string(path)
         .map_err(|_| "could not read completion artifact".to_owned())?;
@@ -85,6 +97,12 @@ pub fn complete(args: &ReportArgs) -> Result<String, String> {
         universe,
     };
     let result = complete_candidate(&input);
+    if comparison {
+        if let CompletionResult::Verified { input } = &result {
+            let result = combat_ogame_api::reports::compare_battle(input).map_err(str::to_owned)?;
+            return render_comparison(&result);
+        }
+    }
     let machine = serde_json::to_string_pretty(&result)
         .map_err(|_| "could not serialize completion result".to_owned())?;
     let mut output = String::new();
@@ -133,4 +151,62 @@ struct CompletionArtifact {
     evidence: CompletionEvidence,
     #[serde(default)]
     universe: Option<PinnedUniverse>,
+}
+
+fn render_comparison(
+    result: &combat_ogame_api::reports::BattleComparison,
+) -> Result<String, String> {
+    let machine = serde_json::to_string_pretty(result)
+        .map_err(|_| "could not serialize comparison result".to_owned())?;
+    Ok(format!(
+        "{}\nMachine-readable result:\n{machine}\n",
+        result.render_text()
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_comparison;
+    use combat_ogame_api::reports::{EvidenceLedger, VerifiedBattleInput, compare_with};
+    use combat_types::{CombatRequest, SimulationResult};
+
+    #[test]
+    fn cli_renders_controlled_suspicion_ceiling_uncertainty_and_redaction() {
+        for (wins_per_hundred, status, runs) in [
+            (0, "suspicious", 200),
+            (5, "statistically_uncertain", 1000),
+            (100, "unremarkable", 50),
+        ] {
+            let input = VerifiedBattleInput {
+                request: CombatRequest::default(),
+                evidence: EvidenceLedger::default(),
+                observed: Some(
+                    serde_json::json!({"winner":"attacker", "report_id":"private-report-secret"}),
+                ),
+                assessment_limitations: vec![],
+            };
+            let mut index = 0;
+            let comparison = compare_with(&input, |request| {
+                (0..request.simulations).map(|_| {
+                    let outcome = if index % 100 < wins_per_hundred {"AttackersWin"} else {"Draw"};
+                    index += 1;
+                    serde_json::from_value::<SimulationResult>(serde_json::json!({
+                        "outcome":outcome,"rounds":6,"attacker_losses":{},"defender_losses":{},
+                        "attacker_remaining":{},"defender_remaining":{},
+                        "debris_field":{"metal":0,"crystal":0,"deuterium":0},
+                        "loot":{"metal":0,"crystal":0,"deuterium":0},"attacker_profit":0,"defender_profit":0
+                    })).unwrap()
+                }).collect()
+            }).unwrap();
+            let text = render_comparison(&comparison).unwrap();
+            assert!(text.contains(&format!("outcome: {status}")));
+            assert!(text.contains("not_assessable"));
+            assert!(!text.contains("private-report-secret"));
+            let machine: serde_json::Value =
+                serde_json::from_str(text.split("Machine-readable result:\n").nth(1).unwrap())
+                    .unwrap();
+            assert_eq!(machine["run_count"], runs);
+            assert_eq!(machine["metrics"][0]["status"], status);
+        }
+    }
 }

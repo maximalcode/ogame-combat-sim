@@ -50,10 +50,11 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct ReportArgs {
-    /// Complete a local artifact produced from a sanitized combat candidate.
+    /// Complete a local candidate artifact (`complete`) or compare its observed battle (`compare`).
     #[arg(value_name = "ACTION")]
     pub action: Option<String>,
-    /// Read the report ID from this local file; otherwise read one ID from stdin.
+    /// Read a report ID or completion artifact from this local file.
+    /// Without an action or file, read one report ID from stdin.
     #[arg(long, value_name = "PATH")]
     pub file: Option<std::path::PathBuf>,
     /// Allow sending the ID to the third-party caching proxy ogapi.faw-kes.de.
