@@ -146,3 +146,45 @@ as historical evidence. This intentionally does not call #63's strict completion
 or #65's acknowledged universe resolution; it never emits Verified battle input
 or a comparison. #67's visibility/evidence rules are preserved through the shared
 parser. Simulation remains a separate explicit action.
+
+## Compare a verified battle privately
+
+Run `combat-cli report compare --file completion.json` with the same local
+candidate/evidence/pinned-universe artifact used by `report complete`. Completion
+still runs first and reports every unresolved field. Comparison is offline;
+resolve and pin any public universe snapshot before invoking it.
+
+The library exposes `compare_battle(&VerifiedBattleInput)` and `compare_with`
+for callers supplying controlled individual simulation batches. The observed
+result remains separate from the simulator request. Neither path creates a
+public fixture or grants publication consent.
+
+Each outcome, round-count, loss-count, resource-loss and generated-debris metric
+gets its own diagnostic label. Numeric probability is
+`min(1, 2 * min(count(sample <= observation), count(sample >= observation)) / n)`:
+ties are included. Its interval doubles and caps the 95% Wilson interval for
+the smaller inclusive tail. Categorical outcomes use their occurrence rate and
+ordinary 95% Wilson interval. Intervals wholly at or above 5% are unremarkable;
+wholly below 5% are suspicious; intervals crossing 5% remain statistically
+uncertain. These correlated diagnostic views are not adjusted for multiple
+testing and never constitute an overall correctness pass.
+
+Sampling starts at 50 and retains those samples when adding 150, then 800 more.
+Only uncertainty triggers another batch; 1,000 is the automatic ceiling.
+Earlier assessments remain in `stages`, including suspicious results that might
+change while another metric extends sampling. No observations tune the inputs,
+threshold or simulator mechanics.
+
+Loss counts require complete sequential rounds, explicit per-round loss arrays,
+and unique participant attribution. Resource-value losses use the report's
+`units_lost_*` fields and metal + crystal + deuterium construction costs. Total
+generated debris uses only `debris_*_total`, and is not assessable when completion
+records missing historical debris settings. Remaining debris, defence rebuild,
+wreck fields and unsupported economics remain explicitly not assessable.
+Zero-round reports without loss evidence do not imply zero destroyed units.
+
+Human output and the JSON result include observations, sample counts, empirical
+mean/median/range/standard deviation or outcome frequency, intervals, thresholds,
+reasons for omissions, effective starting stats, sanitized evidence provenance,
+and model/software context. Unrecognized evidence strings are redacted. These
+are still private battle diagnostics and must not be published without consent.

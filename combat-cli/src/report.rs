@@ -44,8 +44,20 @@ pub fn import(args: &ReportArgs) -> Result<String, String> {
 /// by future UI clients. The input contains a sanitized candidate, explicit
 /// evidence, and a pinned universe; it never accepts a `CombatRequest`.
 pub fn complete(args: &ReportArgs) -> Result<String, String> {
+    workflow(args, false)
+}
+
+pub fn compare(args: &ReportArgs) -> Result<String, String> {
+    if args.resolve_current {
+        return Err("report compare is offline; pin universe settings in the local completion artifact first".to_owned());
+    }
+    workflow(args, true)
+}
+
+fn workflow(args: &ReportArgs, comparison: bool) -> Result<String, String> {
     let path = args.file.as_ref().ok_or_else(|| {
-        "report complete requires --file PATH containing a completion artifact".to_owned()
+        "report completion/comparison requires --file PATH containing a completion artifact"
+            .to_owned()
     })?;
     let json = std::fs::read_to_string(path)
         .map_err(|_| "could not read completion artifact".to_owned())?;
@@ -84,7 +96,24 @@ pub fn complete(args: &ReportArgs) -> Result<String, String> {
         evidence: artifact.evidence,
         universe,
     };
+    if comparison
+        && (input.candidate.attackers.iter().any(|p| p.slot != "A1")
+            || input.candidate.defenders.iter().any(|p| p.slot != "D1"))
+    {
+        return Err("comparison requires canonical single-participant slots A1 and D1".to_owned());
+    }
     let result = complete_candidate(&input);
+    if comparison {
+        if let CompletionResult::Verified { input } = &result {
+            let result = combat_ogame_api::reports::compare_battle(input).map_err(str::to_owned)?;
+            let machine = serde_json::to_string_pretty(&result)
+                .map_err(|_| "could not serialize comparison result".to_owned())?;
+            return Ok(format!(
+                "{}\nMachine-readable result:\n{machine}\n",
+                result.render_text()
+            ));
+        }
+    }
     let machine = serde_json::to_string_pretty(&result)
         .map_err(|_| "could not serialize completion result".to_owned())?;
     let mut output = String::new();

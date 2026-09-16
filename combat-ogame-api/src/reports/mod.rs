@@ -1,7 +1,15 @@
 //! On-demand community-proxy imports. Candidates are deliberately not
 //! `CombatRequest`s: review missing fields and modifier semantics before simulation.
 mod client;
+mod comparison;
+mod comparison_diagnostics;
+mod comparison_metrics;
 mod completion;
+pub use comparison::{
+    BattleComparison, ComparisonStage, ComparisonStatus, MetricComparison, NumericSpread,
+    ProbabilityInterval, compare_battle, compare_with,
+};
+pub use comparison_diagnostics::{ComparisonDiagnostics, StartingStats};
 mod model;
 mod parse;
 #[cfg(test)]
