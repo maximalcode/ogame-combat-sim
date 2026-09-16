@@ -140,3 +140,30 @@ Remaining mechanics include defence rebuild/Engineer, wreck fields, flight/fuel,
 and the unverified General Light Fighter/Deathstar perk. Affected observations
 must stay omitted or skipped with their reason. A working user journey does not
 close these mechanics or the existing comparison issues.
+
+## Local acceptance run
+
+On 2026-09-16, at code/test revision `91b3135` (subsequent acceptance-record
+edits are documentation only):
+
+- `npm ci`, `npm run lint` and `npm run build`: passed; build includes TypeScript
+  checking for application and browser tests.
+- `LIVE_API=1 npm test -- --workers=2`: **31 passed, zero skipped**. Used a
+  dedicated Vite port and installed Chrome for Testing 151.0.7922.34 through
+  `PLAYWRIGHT_CHROME`, because the bundled browser download timed out. The API
+  was built from this checkout with `cargo run --profile test -p combat-api`.
+- Visually inspected the combined real-API journey at 1280px: both sides,
+  unknown-field labels, universe rules, two attempt snapshots and comparison
+  remained readable. Existing 1024px/1440px keyboard/image-failure checks passed.
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`,
+  `cargo deny check advisories bans licenses` and `cargo test --workspace --locked`:
+  passed, including the existing strict completion, universe, consent and local
+  report-provider adapter tests.
+- Using the CLI binary built by that workspace test run,
+  `target/debug/combat-cli fixture check combat-core/tests/fixtures` and
+  `target/debug/combat-cli fixture run combat-core/tests/fixtures`: one valid,
+  one matched **synthetic** fixture. Zero observed battles assessed.
+
+This accepts the functional journey. Accuracy evidence and mechanics gaps
+remain as listed above; no live proxy availability or observed-battle accuracy
+result is claimed.
