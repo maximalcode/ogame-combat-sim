@@ -677,15 +677,39 @@ impl Combat {
     }
 
     /// Simulate combat with explicit slots (A1/A2, D1/D2), returning per-slot results
+    pub fn simulate_single_with_slots(
+        &self,
+        attacker_slots: &[(String, PartyData)],
+        defender_slots: &[(String, PartyData)],
+        use_rapid_fire: bool,
+        collect_compositions: bool,
+        rng: &mut impl Rng,
+    ) -> SingleCombatResult {
+        let prepare = |slots: &[(String, PartyData)]| {
+            slots
+                .iter()
+                .map(|(_, data)| (data.clone(), StatsCache::new(self.entity_db, data)))
+                .collect::<Vec<_>>()
+        };
+        self.resolve_slots(
+            &prepare(attacker_slots),
+            &prepare(defender_slots),
+            use_rapid_fire,
+            collect_compositions,
+            rng,
+        )
+    }
+
+    // The established slot round loop is shared by modifier-based and reported-stat inputs.
     // Long, and legitimately flagged: this is the round loop with slot
     // bookkeeping threaded through it. Splitting it is real work with real
     // risk to combat accuracy, so it is allowed here rather than done badly
     // as a side effect of adopting a linter.
     #[allow(clippy::too_many_lines)]
-    pub fn simulate_single_with_slots(
+    pub(crate) fn resolve_slots(
         &self,
-        attacker_slots: &[(String, PartyData)],
-        defender_slots: &[(String, PartyData)],
+        attacker_slots: &[(PartyData, StatsCache)],
+        defender_slots: &[(PartyData, StatsCache)],
         use_rapid_fire: bool,
         collect_compositions: bool,
         rng: &mut impl Rng,
@@ -704,44 +728,44 @@ impl Combat {
         let mut defender_original_per_slot: HashMap<u8, FleetComposition> = HashMap::new();
 
         // Helper to extend party from a slot
-        let extend_party = |party: &mut Party, slot_index: usize, data: &PartyData| {
-            let stats_cache = StatsCache::new(self.entity_db, data);
-            let slot_id = (slot_index + 1) as u8;
-            let mut original: FleetComposition = HashMap::new();
-            for (&entity_type, &count) in &data.entities {
-                if count == 0 {
-                    continue;
-                }
-                if let Some(base_stats) = self.entity_db.get(&entity_type) {
-                    if let Some(modified_stats) = stats_cache.get(entity_type) {
-                        // Store RF info
-                        if !base_stats.rapid_fire_against.is_empty() {
-                            party
-                                .rapid_fire_map
-                                .insert(entity_type, base_stats.rapid_fire_against.clone());
+        let extend_party =
+            |party: &mut Party, slot_index: usize, data: &PartyData, stats_cache: &StatsCache| {
+                let slot_id = (slot_index + 1) as u8;
+                let mut original: FleetComposition = HashMap::new();
+                for (&entity_type, &count) in &data.entities {
+                    if count == 0 {
+                        continue;
+                    }
+                    if let Some(base_stats) = self.entity_db.get(&entity_type) {
+                        if let Some(modified_stats) = stats_cache.get(entity_type) {
+                            // Store RF info
+                            if !base_stats.rapid_fire_against.is_empty() {
+                                party
+                                    .rapid_fire_map
+                                    .insert(entity_type, base_stats.rapid_fire_against.clone());
+                            }
+                            for _ in 0..count {
+                                party.entities.push(Entity::new_with_slot(
+                                    entity_type,
+                                    modified_stats.weapon,
+                                    modified_stats.shield,
+                                    modified_stats.hull,
+                                    slot_id,
+                                ));
+                            }
+                            *original.entry(entity_type).or_insert(0) += count;
                         }
-                        for _ in 0..count {
-                            party.entities.push(Entity::new_with_slot(
-                                entity_type,
-                                modified_stats.weapon,
-                                modified_stats.shield,
-                                modified_stats.hull,
-                                slot_id,
-                            ));
-                        }
-                        *original.entry(entity_type).or_insert(0) += count;
                     }
                 }
-            }
-            original
-        };
+                original
+            };
 
-        for (idx, (_slot_name, data)) in attacker_slots.iter().enumerate() {
-            let original = extend_party(&mut attackers, idx, data);
+        for (idx, (data, stats)) in attacker_slots.iter().enumerate() {
+            let original = extend_party(&mut attackers, idx, data, stats);
             attacker_original_per_slot.insert((idx + 1) as u8, original);
         }
-        for (idx, (_slot_name, data)) in defender_slots.iter().enumerate() {
-            let original = extend_party(&mut defenders, idx, data);
+        for (idx, (data, stats)) in defender_slots.iter().enumerate() {
+            let original = extend_party(&mut defenders, idx, data, stats);
             defender_original_per_slot.insert((idx + 1) as u8, original);
         }
 

@@ -76,9 +76,36 @@ pub fn compare_with(
     input: &VerifiedBattleInput,
     mut simulate: impl FnMut(&CombatRequest) -> Vec<SimulationResult>,
 ) -> Result<BattleComparison, &'static str> {
+    let sampling = bounded_samples(
+        |count| {
+            let mut request = input.request.clone();
+            request.simulations = count as u32;
+            Ok(simulate(&request))
+        },
+        |samples| assess(input, samples),
+    )?;
+    Ok(BattleComparison {
+        stages: sampling.stages,
+        run_count: sampling.run_count, metrics: sampling.metrics,
+        diagnostics: super::comparison_diagnostics::diagnostics(input),
+        method: "Inclusive empirical two-sided tail: min(1, 2 * min(P(X <= observed), P(X >= observed))). Numeric intervals double and cap the 95% Wilson interval of the smaller inclusive tail; categorical intervals use occurrence counts directly. Individual 5% labels are diagnostics, not a multiple-testing-adjusted proof or a global correctness pass. Samples are retained at totals 50, 200, 1000; suspicious labels do not request reruns.".to_owned(),
+        software_version: env!("CARGO_PKG_VERSION").to_owned(),
+    })
+}
+
+pub(super) struct SamplingResult {
+    pub run_count: usize,
+    pub stages: Vec<ComparisonStage>,
+    pub metrics: Vec<MetricComparison>,
+}
+
+pub(super) fn bounded_samples<T>(
+    mut simulate: impl FnMut(usize) -> Result<Vec<T>, &'static str>,
+    assess: impl Fn(&[T]) -> Vec<MetricComparison>,
+) -> Result<SamplingResult, &'static str> {
     let mut samples = Vec::new();
     let mut stages = Vec::new();
-    let mut metrics = assess(input, &samples);
+    let mut metrics = assess(&samples);
     for total in [50, 200, 1000] {
         if total != 50
             && !metrics
@@ -87,25 +114,22 @@ pub fn compare_with(
         {
             break;
         }
-        let mut request = input.request.clone();
-        request.simulations = (total - samples.len()) as u32;
-        let batch = simulate(&request);
-        if batch.len() != request.simulations as usize {
+        let count = total - samples.len();
+        let batch = simulate(count)?;
+        if batch.len() != count {
             return Err("simulation batch did not return the requested sample count");
         }
         samples.extend(batch);
-        metrics = assess(input, &samples);
+        metrics = assess(&samples);
         stages.push(ComparisonStage {
             run_count: samples.len(),
             metrics: metrics.clone(),
         });
     }
-    Ok(BattleComparison {
+    Ok(SamplingResult {
+        run_count: samples.len(),
         stages,
-        run_count: samples.len(), metrics,
-        diagnostics: super::comparison_diagnostics::diagnostics(input),
-        method: "Inclusive empirical two-sided tail: min(1, 2 * min(P(X <= observed), P(X >= observed))). Numeric intervals double and cap the 95% Wilson interval of the smaller inclusive tail; categorical intervals use occurrence counts directly. Individual 5% labels are diagnostics, not a multiple-testing-adjusted proof or a global correctness pass. Samples are retained at totals 50, 200, 1000; suspicious labels do not request reruns.".to_owned(),
-        software_version: env!("CARGO_PKG_VERSION").to_owned(),
+        metrics,
     })
 }
 
@@ -218,7 +242,7 @@ pub(super) fn numeric(
     result
 }
 
-fn assess_probability(result: &mut MetricComparison, count: usize, multiplier: f64) {
+pub(super) fn assess_probability(result: &mut MetricComparison, count: usize, multiplier: f64) {
     let n = result.run_count as f64;
     let p = count as f64 / n;
     let z: f64 = 1.959_963_984_540_054;

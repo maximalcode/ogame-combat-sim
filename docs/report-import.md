@@ -188,3 +188,7 @@ mean/median/range/standard deviation or outcome frequency, intervals, thresholds
 reasons for omissions, effective starting stats, sanitized evidence provenance,
 and model/software context. Unrecognized evidence strings are redacted. These
 are still private battle diagnostics and must not be published without consent.
+
+For public reports that expose effective unit stats but lack modifier evidence,
+see the separate [conditional reported-stat comparison](reported-stat-comparison.md).
+It does not complete a candidate or validate its modifiers.

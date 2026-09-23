@@ -50,7 +50,8 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct ReportArgs {
-    /// Complete a local candidate artifact (`complete`) or compare its observed battle (`compare`).
+    /// Complete a candidate (`complete`), compare verified inputs (`compare`),
+    /// or compare reported effective stats conditionally (`compare-stats`).
     #[arg(value_name = "ACTION")]
     pub action: Option<String>,
     /// Read a report ID or completion artifact from this local file.
