@@ -25,6 +25,8 @@ fn cli_reports_conditional_stats_and_rejects_ambiguous_units() {
     let result: serde_json::Value =
         serde_json::from_str(text.split("Machine-readable result:\n").nth(1).unwrap()).unwrap();
     assert_eq!(result["run_count"], 50);
+    assert_eq!(result["metrics"][0]["occurrence_count"], 50);
+    assert!(!text.contains("verified inputs"));
     assert_eq!(result["metrics"][0]["status"], "unremarkable");
     artifact["battle"]["attackers"][0]["units"]["204"]["armour"] = 123.into();
     std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();

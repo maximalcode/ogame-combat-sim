@@ -261,7 +261,7 @@ pub(super) fn assess_probability(result: &mut MetricComparison, count: usize, mu
     } else {
         ComparisonStatus::StatisticallyUncertain
     };
-    "Rarity under the verified inputs and current combat model; not proof of correctness or a reason to tune inputs.".clone_into(&mut result.explanation);
+    "Rarity under the supplied inputs and current combat model; not proof of correctness or a reason to tune inputs.".clone_into(&mut result.explanation);
     result.interval = Some(interval);
 }
 

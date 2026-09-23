@@ -46,6 +46,13 @@ fn direct_stat_comparison_retains_batches_and_labels_its_limits() {
     .unwrap();
     assert_eq!(sizes, [50, 150]);
     assert_eq!(result.run_count, 200);
+    assert_eq!(result.metrics[0].occurrence_count, Some(0));
+    assert!(
+        result
+            .metrics
+            .iter()
+            .all(|m| !m.explanation.contains("verified inputs"))
+    );
     assert!(result.limitations.contains("modifier provenance"));
     assert_eq!(
         result

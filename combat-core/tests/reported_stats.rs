@@ -1,14 +1,18 @@
+// This boundary uses the shared battle constants, not the aggregate simulator helpers.
+#[allow(dead_code)]
+mod common;
 use combat_core::RoundOutcome as CombatOutcome;
 use combat_core::{Combat, ReportedBattle, ReportedSlot, ReportedUnit};
+use common::{FIGHTERS, LARGE_SHIELD_DOME, LIGHT_FIGHTER};
 use std::collections::BTreeMap;
 
 fn battle(weapon: u32) -> ReportedBattle {
     ReportedBattle {
         attackers: vec![ReportedSlot {
             units: BTreeMap::from([(
-                204,
+                LIGHT_FIGHTER,
                 ReportedUnit {
-                    count: 250,
+                    count: FIGHTERS,
                     weapon,
                     shield: 100.0,
                     hull: 400.0,
@@ -17,7 +21,7 @@ fn battle(weapon: u32) -> ReportedBattle {
         }],
         defenders: vec![ReportedSlot {
             units: BTreeMap::from([(
-                408,
+                LARGE_SHIELD_DOME,
                 ReportedUnit {
                     count: 1,
                     weapon: 1,
@@ -39,17 +43,25 @@ fn reported_stats_enter_the_existing_bounce_rule_without_modifiers() {
     let hit = combat.simulate_reported(&battle(100)).unwrap();
     assert_eq!(hit.outcome, CombatOutcome::AttackersWin);
     assert_eq!(hit.rounds, 1);
-    assert_eq!(hit.defender_losses[&408], 1);
+    assert_eq!(hit.defender_losses[&LARGE_SHIELD_DOME], 1);
 }
 
 #[test]
 fn invalid_reported_inputs_are_rejected_before_allocating_fleets() {
     let combat = Combat::new();
     let mut input = battle(100);
-    input.attackers[0].units.get_mut(&204).unwrap().hull = f32::NAN;
+    input.attackers[0]
+        .units
+        .get_mut(&LIGHT_FIGHTER)
+        .unwrap()
+        .hull = f32::NAN;
     assert!(combat.simulate_reported(&input).is_err());
     input = battle(100);
-    input.attackers[0].units.get_mut(&204).unwrap().count = u32::MAX;
+    input.attackers[0]
+        .units
+        .get_mut(&LIGHT_FIGHTER)
+        .unwrap()
+        .count = u32::MAX;
     assert!(combat.simulate_reported(&input).is_err());
     input = battle(100);
     input.attackers[0].units.insert(
@@ -69,7 +81,7 @@ fn different_slots_keep_their_own_reported_stats() {
     let mut input = battle(100);
     input.attackers.push(ReportedSlot {
         units: BTreeMap::from([(
-            204,
+            LIGHT_FIGHTER,
             ReportedUnit {
                 count: 1,
                 weapon: 0,
@@ -88,8 +100,8 @@ fn different_slots_keep_their_own_reported_stats() {
             .find(|s| s.slot_id == "A1")
             .unwrap()
             .remaining
-            .get(&204),
-        Some(&250)
+            .get(&LIGHT_FIGHTER),
+        Some(&FIGHTERS)
     );
     assert_eq!(
         slots
@@ -97,7 +109,7 @@ fn different_slots_keep_their_own_reported_stats() {
             .find(|s| s.slot_id == "A2")
             .unwrap()
             .remaining
-            .get(&204),
+            .get(&LIGHT_FIGHTER),
         Some(&1)
     );
 }

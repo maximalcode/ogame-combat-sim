@@ -136,11 +136,9 @@ fn assess(
             ObservedOutcome::Draw => RoundOutcome::Draw,
         };
         if !samples.is_empty() {
-            assess_probability(
-                &mut outcome,
-                samples.iter().filter(|s| s.outcome == expected).count(),
-                1.0,
-            );
+            let count = samples.iter().filter(|s| s.outcome == expected).count();
+            outcome.occurrence_count = Some(count);
+            assess_probability(&mut outcome, count, 1.0);
         }
     }
     let mut metrics = vec![
@@ -153,12 +151,12 @@ fn assess(
     ];
     for (side, slots, observed) in [
         (
-            "attacker",
+            Side::Attacker,
             &input.battle.attackers,
             &input.observed.attacker_remaining,
         ),
         (
-            "defender",
+            Side::Defender,
             &input.battle.defenders,
             &input.observed.defender_remaining,
         ),
@@ -181,14 +179,35 @@ fn assess(
     metrics
 }
 
+#[derive(Clone, Copy)]
+enum Side {
+    Attacker,
+    Defender,
+}
+
+impl Side {
+    fn labels(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Attacker => ("attacker", "A"),
+            Self::Defender => ("defender", "D"),
+        }
+    }
+    fn slots(self, sample: &SingleCombatResult) -> Option<&[combat_types::SlotResult]> {
+        match self {
+            Self::Attacker => sample.attacker_slots.as_deref(),
+            Self::Defender => sample.defender_slots.as_deref(),
+        }
+    }
+}
+
 fn losses(
     metrics: &mut Vec<MetricComparison>,
-    side: &str,
+    side: Side,
     slots: &[ReportedSlot],
     observed: Option<&[BTreeMap<u16, u32>]>,
     samples: &[SingleCombatResult],
 ) {
-    let prefix = if side == "attacker" { "A" } else { "D" };
+    let (label, prefix) = side.labels();
     let mut attribution_complete = true;
     let mut aggregate_observed = 0u64;
     let mut aggregate_samples = vec![0u64; samples.len()];
@@ -201,13 +220,7 @@ fn losses(
             let values: Option<Vec<u64>> = samples
                 .iter()
                 .map(|s| {
-                    let results = if side == "attacker" {
-                        &s.attacker_slots
-                    } else {
-                        &s.defender_slots
-                    };
-                    results
-                        .as_ref()?
+                    side.slots(s)?
                         .iter()
                         .find(|s| s.slot_id == slot_id)
                         .map(|s| u64::from(s.losses.get(&id).copied().unwrap_or(0)))
@@ -243,7 +256,7 @@ fn losses(
     if !attribution_complete {
         for name in ["loss_count", "resource_losses"] {
             metrics.push(omitted(
-                &format!("{side}.{name}"),
+                &format!("{label}.{name}"),
                 "simulation has incomplete slot attribution",
                 samples.len(),
             ));
@@ -251,12 +264,12 @@ fn losses(
         return;
     }
     metrics.push(numeric(
-        &format!("{side}.loss_count"),
+        &format!("{label}.loss_count"),
         observed.map(|_| aggregate_observed),
         aggregate_samples,
     ));
     metrics.push(numeric(
-        &format!("{side}.resource_losses"),
+        &format!("{label}.resource_losses"),
         observed.map(|_| costs_observed),
         costs_samples,
     ));
