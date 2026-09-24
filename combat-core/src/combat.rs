@@ -31,6 +31,41 @@ mod tests {
     use rand::rngs::SmallRng;
 
     #[test]
+    fn damaged_hull_can_explode_after_a_shield_only_hit() {
+        let mut target = Entity::new(215, 1, 1000.0, 1000.0);
+        target.current_hull = 500.0;
+        target.current_shield = -1.0;
+        target.regenerate_shield();
+        // Seed zero's first roll triggers the 50% explosion probability.
+        apply_damage_fast(10, &mut target, &mut SmallRng::seed_from_u64(0));
+        assert!(!target.is_alive);
+        approx::assert_abs_diff_eq!(target.current_hull, 500.0);
+        approx::assert_abs_diff_eq!(target.current_shield, 990.0);
+    }
+
+    #[test]
+    fn ineffectual_hits_do_not_trigger_damaged_hull_explosions() {
+        for weapon in [0, 9] {
+            let mut target = Entity::new(215, 1, 1000.0, 1000.0);
+            target.current_hull = 500.0;
+            apply_damage_fast(weapon, &mut target, &mut SmallRng::seed_from_u64(0));
+            assert!(target.is_alive);
+            approx::assert_abs_diff_eq!(target.current_hull, 500.0);
+            approx::assert_abs_diff_eq!(target.current_shield, 1000.0);
+        }
+    }
+
+    #[test]
+    fn depleted_shields_do_not_absorb_another_shot() {
+        for (shield, expected_hull) in [(0.0, 950.0), (40.0, 990.0)] {
+            let mut target = Entity::new(215, 1, 100.0, 1000.0);
+            target.current_shield = shield;
+            apply_damage_fast(50, &mut target, &mut SmallRng::seed_from_u64(0));
+            approx::assert_abs_diff_eq!(target.current_hull, expected_hull);
+        }
+    }
+
+    #[test]
     fn compositions_flag_no_effect() {
         // Build small deterministic scenario
         let combat = Combat::new();
@@ -426,36 +461,28 @@ impl Party {
 /// Apply damage from attacker to target (optimized version)
 #[inline]
 fn apply_damage_fast(weapon_power: u32, target: &mut Entity, rng: &mut impl Rng) {
-    if !target.is_alive {
+    if !target.is_alive || weapon_power == 0 {
         return;
     }
 
     // OGame damage is exact (no randomization)
     let mut attack_power = weapon_power as f32;
 
-    // Handle shield damage
-    if attack_power < target.max_shield && target.current_shield >= 0.0 {
-        // Attack is weaker than full shield - calculate percentage damage
+    // Quantize damage while a shield can absorb the whole shot. Once the shot
+    // exceeds the remaining shield, its excess reaches the hull.
+    if target.current_shield > 0.0 {
         let damage_percentage = (attack_power / target.max_shield * 100.0).floor();
-
-        if damage_percentage >= 1.0 {
-            // Deal percentage-based damage
-            let shield_damage = (damage_percentage / 100.0) * target.max_shield;
-            target.current_shield -= shield_damage;
-
-            // Handle edge case: damage percentage has decimal part
-            if target.current_shield == 0.0 && damage_percentage > damage_percentage.floor() {
-                target.current_shield -=
-                    ((damage_percentage - damage_percentage.floor()) / 100.0) * target.max_shield;
-            }
+        if damage_percentage < 1.0 {
+            // Ineffectual shots do not trigger an explosion check.
+            return;
         }
-        // else: Shot bounces (damage < 1% of shield)
-
-        attack_power = 0.0; // Attack absorbed by shield
-    } else if target.current_shield > 0.0 {
-        // Attack is stronger than shield - break through
-        attack_power -= target.current_shield;
-        target.current_shield = -1.0; // Mark shield as destroyed
+        if attack_power < target.current_shield {
+            target.current_shield -= (damage_percentage / 100.0) * target.max_shield;
+            attack_power = 0.0;
+        } else {
+            attack_power -= target.current_shield;
+            target.current_shield = 0.0;
+        }
     }
 
     // Handle hull damage
@@ -465,11 +492,11 @@ fn apply_damage_fast(weapon_power: u32, target: &mut Entity, rng: &mut impl Rng)
         if target.current_hull <= 0.0 {
             // Entity destroyed
             target.destroy();
-        } else {
-            // Check for explosion probability
-            target.check_explosion(rng);
         }
     }
+    // Existing hull damage remains dangerous after shields regenerate: every
+    // effective hit can trigger an explosion, including a shield-only hit.
+    target.check_explosion(rng);
 }
 
 /// Main combat simulation
