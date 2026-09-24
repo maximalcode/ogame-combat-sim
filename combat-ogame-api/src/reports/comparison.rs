@@ -76,6 +76,11 @@ pub fn compare_with(
     input: &VerifiedBattleInput,
     mut simulate: impl FnMut(&CombatRequest) -> Vec<SimulationResult>,
 ) -> Result<BattleComparison, &'static str> {
+    if input.observed.is_none() {
+        return Err(
+            "comparison requires a distinct observed combat report; an espionage snapshot has no observed battle",
+        );
+    }
     let sampling = bounded_samples(
         |count| {
             let mut request = input.request.clone();

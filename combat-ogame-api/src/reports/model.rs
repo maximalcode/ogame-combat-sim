@@ -36,6 +36,8 @@ pub struct Provenance {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Participant {
     pub slot: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub espionage_visibility: Option<EspionageVisibility>,
     pub entities: Option<Composition>,
     pub ships: Option<Composition>,
     pub defenses: Option<Composition>,
@@ -46,6 +48,10 @@ pub struct Participant {
     /// differs between report variants; review against reported unit stats.
     pub reported_base_stats_booster: Option<serde_json::Value>,
     pub reported_unit_stats: Option<serde_json::Value>,
+    /// Allowlisted numeric espionage evidence with undocumented units. Never
+    /// interpreted as combat-report per-unit statistics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_combat_information: Option<serde_json::Value>,
 }
 
 /// Unknown levels are null, never zero. Basis distinguishes research from
@@ -56,4 +62,12 @@ pub struct TechnologyCandidate {
     pub weapon: Option<u8>,
     pub shield: Option<u8>,
     pub armour: Option<u8>,
+}
+
+/// Provider failure flags: only an explicit false establishes visibility.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct EspionageVisibility {
+    pub failed_ships: Option<bool>,
+    pub failed_defense: Option<bool>,
+    pub failed_research: Option<bool>,
 }

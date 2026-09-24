@@ -23,7 +23,10 @@ pub use completion::{
     ParticipantEvidence, PinnedUniverse, PinnedUniverseSettings, TechnologyBasis,
     TechnologyEvidence, VerifiedBattleInput, complete_candidate, complete_report,
 };
-pub use model::{Candidate, Participant, Provenance, ResourcesCandidate, TechnologyCandidate};
+pub use model::{
+    Candidate, EspionageVisibility, Participant, Provenance, ResourcesCandidate,
+    TechnologyCandidate,
+};
 pub use parse::parse_report;
 pub use universe::{
     UniverseResolutionError, pinned_universe_from_server_data, resolve_current_universe,

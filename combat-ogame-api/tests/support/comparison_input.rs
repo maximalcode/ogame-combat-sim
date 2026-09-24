@@ -33,6 +33,8 @@ pub fn universe() -> PinnedUniverse {
 pub fn participant(slot: &str, entity: Option<u16>) -> Participant {
     Participant {
         slot: slot.to_owned(),
+        espionage_visibility: None,
+        reported_combat_information: None,
         entities: entity.map(|entity| BTreeMap::from([(entity, 20)])),
         ships: None,
         defenses: None,

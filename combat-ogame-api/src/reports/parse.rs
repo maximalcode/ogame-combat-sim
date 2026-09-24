@@ -147,6 +147,11 @@ fn espionage(data: &Value, generic: &Value, candidate: &mut Candidate) -> Result
     }
     candidate.defenders.push(Participant {
         slot: "D1".to_owned(),
+        espionage_visibility: Some(super::model::EspionageVisibility {
+            failed_ships: optional_bool(generic, "failed_ships")?,
+            failed_defense: optional_bool(generic, "failed_defense")?,
+            failed_research: optional_bool(generic, "failed_research")?,
+        }),
         ships,
         defenses,
         entities,
@@ -155,6 +160,11 @@ fn espionage(data: &Value, generic: &Value, candidate: &mut Candidate) -> Result
         alliance_class_id: class(generic, "defender_alliance_class_id")?,
         reported_base_stats_booster: boosters(details)?,
         reported_unit_stats: None,
+        reported_combat_information: details
+            .get("combatInformation")
+            .filter(|v| !v.is_null())
+            .map(stats)
+            .transpose()?,
     });
     Ok(())
 }
@@ -233,6 +243,8 @@ fn combat(data: &Value, generic: &Value, candidate: &mut Candidate) -> Result<()
             candidate.review_required.push(format!("{slot}.modifiers: verify reported technology/class treatment and BaseStatsBooster units; do not apply them twice"));
             target.push(Participant {
                 slot,
+                espionage_visibility: None,
+                reported_combat_information: None,
                 entities,
                 ships: None,
                 defenses: None,

@@ -192,3 +192,39 @@ are still private battle diagnostics and must not be published without consent.
 For public reports that expose effective unit stats but lack modifier evidence,
 see the separate [conditional reported-stat comparison](reported-stat-comparison.md).
 It does not complete a candidate or validate its modifiers.
+
+### Espionage scenario completion
+
+`report complete --file artifact.json` also accepts an espionage candidate. Supply
+one complete attacker under `evidence.participants.A1`: `entities`, technology
+with its researched/already-effective basis, and an explicit `lifeform` map.
+Researched technology requires confirmed player and alliance classes. Defender
+evidence uses `D1` and the same modifier rules.
+
+Only an explicitly false `failed_ships`, `failed_defense`, or `failed_research`
+flag establishes visibility. The candidate retains those flags under
+`espionage_visibility`; hidden or unspecified groups remain unresolved even if
+arrays are present. Older candidates without retained flags need to be parsed
+again from the local capture or completed with explicit evidence. Revealed empty
+ship/defence arrays are known empty groups, including an entirely empty defender.
+Missing arrays and missing research entries never imply zero.
+
+To fill hidden composition, supply the complete defender `entities` map, including
+any revealed units unchanged. Completion checks it against each revealed group;
+it cannot overwrite the snapshot. Revealed research with an established researched
+basis is reused without requiring the same levels again. Classes are applied once,
+and lifeform percentages always require independent explicit evidence.
+
+The evidence ledger preserves `snapshot.provenance`, per-group sources and the
+separate universe source timestamp. Supplied completion evidence describes the
+scenario being completed; it does not prove that a later configuration existed at
+the snapshot time. Undocumented `combatInformation` retains only the numeric
+`weapon`, `shield`, `armor`, `cargo`, and `speed` allowlist under
+`reported_combat_information`. It and provider boosters remain uninterpreted
+report evidence, never combat-report stat checks or inferred lifeform percentages.
+
+The verified result contains `input.request`, which can be saved as JSON and run
+with `combat-cli sim --file request.json`. Its `observed` field is null and
+`report compare` refuses it: an espionage snapshot contains no observed battle.
+A later, distinct combat report must go through its own completion workflow before
+comparison. These paths are offline and do not fetch reports or publish fixtures.
