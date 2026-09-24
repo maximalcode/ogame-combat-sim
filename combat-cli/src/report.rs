@@ -96,6 +96,10 @@ fn workflow(args: &ReportArgs, comparison: bool) -> Result<String, String> {
         evidence: artifact.evidence,
         universe,
     };
+    let label = match input.candidate.report_kind {
+        combat_ogame_api::reports::ReportKind::Combat => "combat report candidate",
+        combat_ogame_api::reports::ReportKind::Espionage => "espionage scenario",
+    };
     let result = complete_candidate(&input);
     if comparison {
         if let CompletionResult::Verified { input } = &result {
@@ -108,7 +112,10 @@ fn workflow(args: &ReportArgs, comparison: bool) -> Result<String, String> {
     let mut output = String::new();
     match &result {
         CompletionResult::Verified { input } => {
-            output.push_str("Verified combat report candidate\n");
+            let _ = writeln!(output, "Verified {label}");
+            if input.observed.is_none() {
+                output.push_str("  Snapshot evidence only; no observed battle comparison or claim about another time.\n");
+            }
             let _ = write!(
                 output,
                 "  attacker entities: {}\n  defender entities: {}\n  evidence fields: {}\n",
@@ -118,11 +125,7 @@ fn workflow(args: &ReportArgs, comparison: bool) -> Result<String, String> {
             );
         }
         CompletionResult::Incomplete { issues } => {
-            let _ = writeln!(
-                output,
-                "Incomplete combat report candidate ({} issues)\n",
-                issues.len()
-            );
+            let _ = writeln!(output, "Incomplete {label} ({} issues)\n", issues.len());
             for issue in issues {
                 let _ = writeln!(
                     output,

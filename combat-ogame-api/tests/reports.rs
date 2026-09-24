@@ -216,3 +216,46 @@ fn optional_version_provenance_is_validated_and_never_invented() {
         );
     }
 }
+
+#[test]
+fn all_espionage_visibility_combinations_survive_sanitization() {
+    let id = ReportId::parse("sr-en-1-0000000000000000000000000000000000000000").unwrap();
+    for ships in [Some(false), Some(true), None] {
+        for defense in [Some(false), Some(true), None] {
+            for research in [Some(false), Some(true), None] {
+                let payload = json!({"RESULT_CODE":1000,"RESULT_DATA":{
+                    "generic":{"failed_ships":ships,"failed_defense":defense,"failed_research":research},
+                    "details":{"ships":[],"defense":[],"research":[{"research_type":109,"level":0}]}
+                }});
+                let candidate = parse_report(&id, &payload.to_string()).unwrap();
+                let defender = &candidate.defenders[0];
+                let visibility = defender.espionage_visibility.as_ref().unwrap();
+                assert_eq!(visibility.failed_ships, ships);
+                assert_eq!(visibility.failed_defense, defense);
+                assert_eq!(visibility.failed_research, research);
+                assert_eq!(defender.ships.is_some(), ships == Some(false));
+                assert_eq!(defender.defenses.is_some(), defense == Some(false));
+                assert_eq!(
+                    defender.technology.weapon.is_some(),
+                    research == Some(false)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn malformed_espionage_combat_information_is_rejected_without_echoing_values() {
+    let id = ReportId::parse("sr-en-1-0000000000000000000000000000000000000000").unwrap();
+    for info in [
+        json!({"weapon":"private-secret"}),
+        json!({"armor":-1}),
+        json!([]),
+    ] {
+        let payload = json!({"RESULT_CODE":1000,"RESULT_DATA":{
+            "generic":{"failed_ships":true},"details":{"combatInformation":info}
+        }});
+        let error = parse_report(&id, &payload.to_string()).unwrap_err();
+        assert!(!error.to_string().contains("private-secret"));
+    }
+}

@@ -6,6 +6,8 @@
 //! a [`CombatRequest`] is produced.
 
 use super::ReportKind;
+#[path = "espionage_completion.rs"]
+mod espionage;
 use super::model::{Candidate, Composition, Participant};
 use combat_core::ModifiedStats;
 use combat_types::entities::entity_stats;
@@ -319,27 +321,24 @@ pub enum CompletionResult {
 // the fail-closed completion checks.
 #[allow(clippy::too_many_lines)]
 pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
-    let candidate = &input.candidate;
     let mut issues = Vec::new();
     let mut evidence = EvidenceLedger::default();
+    let prepared = espionage::prepare(input, &mut issues, &mut evidence);
+    let input = prepared.as_ref().unwrap_or(input);
+    let candidate = &input.candidate;
 
     evidence.report(
-        "battle.provenance",
+        if candidate.report_kind == ReportKind::Espionage {
+            "snapshot.provenance"
+        } else {
+            "battle.provenance"
+        },
         serde_json::to_value(&candidate.provenance).unwrap_or(Value::Null),
     );
     if let Some(loot_percentage) = candidate.loot_percentage {
         evidence.report("loot_percentage", Value::from(loot_percentage));
     }
 
-    if candidate.report_kind != ReportKind::Combat {
-        issue(
-            &mut issues,
-            FieldIssueKind::Unsupported,
-            "report_kind",
-            "only a single combat report can be completed by this workflow",
-            "supply a combat report candidate",
-        );
-    }
     if candidate.attackers.len() != 1 {
         issue(
             &mut issues,
@@ -427,6 +426,7 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         "universe",
         serde_json::to_value(&input.universe).unwrap_or(Value::Null),
     );
+    espionage::record_provenance(input, &mut evidence);
     let assessment_limitations = assessment_limitations(&input.universe, &request);
     CompletionResult::Verified {
         input: Box::new(VerifiedBattleInput {
@@ -463,10 +463,20 @@ fn resolve_participant(
     let location = participant.slot.clone();
     let supplied = all_evidence.participants.get(&location);
     if let Some(composition) = participant.entities.as_ref() {
-        validate_composition(composition, &location, issues);
+        validate_composition(
+            composition,
+            &location,
+            participant.espionage_visibility.is_some(),
+            issues,
+        );
     }
     if let Some(composition) = supplied.and_then(|e| e.entities.as_ref()) {
-        validate_composition(composition, &location, issues);
+        validate_composition(
+            composition,
+            &location,
+            participant.espionage_visibility.is_some(),
+            issues,
+        );
     }
     let entities = match (
         &participant.entities,
@@ -610,6 +620,12 @@ fn resolve_participant(
 }
 
 fn record_report_evidence(participant: &Participant, location: &str, ledger: &mut EvidenceLedger) {
+    if let Some(info) = &participant.reported_combat_information {
+        ledger.report(
+            format!("{location}.reported_combat_information"),
+            info.clone(),
+        );
+    }
     if let Some(stats) = participant.reported_unit_stats.as_ref() {
         ledger.report(format!("{location}.reported_unit_stats"), stats.clone());
     }
@@ -742,7 +758,30 @@ fn resolve_technology(
     ledger: &mut EvidenceLedger,
 ) -> Option<Technology> {
     let location = format!("{}.technology", participant.slot);
+    let reported_research = if participant
+        .espionage_visibility
+        .as_ref()
+        .is_some_and(|v| v.failed_research == Some(false))
+        && participant.technology.basis == "researched"
+    {
+        match (
+            participant.technology.weapon,
+            participant.technology.shield,
+            participant.technology.armour,
+        ) {
+            (Some(weapon), Some(shield), Some(armour)) => Some(TechnologyEvidence {
+                basis: TechnologyBasis::Researched,
+                weapon,
+                shield,
+                armour,
+            }),
+            _ => None,
+        }
+    } else {
+        None
+    };
     let supplied_technology = supplied.and_then(|e| e.technology.as_ref());
+    let explicit_technology = supplied_technology.or(reported_research.as_ref());
     let candidate_technology = &participant.technology;
     if candidate_technology.weapon.is_some()
         || candidate_technology.shield.is_some()
@@ -753,7 +792,7 @@ fn resolve_technology(
             serde_json::to_value(candidate_technology).unwrap_or(Value::Null),
         );
     }
-    let Some(explicit) = supplied_technology else {
+    let Some(explicit) = explicit_technology else {
         if candidate_technology.weapon.is_some()
             || candidate_technology.shield.is_some()
             || candidate_technology.armour.is_some()
@@ -782,7 +821,12 @@ fn resolve_technology(
         armour: explicit.armour,
         ..Technology::default()
     };
-    ledger.supplied(
+    ledger.record(
+        if supplied_technology.is_some() {
+            EvidenceSource::Supplied
+        } else {
+            EvidenceSource::Report
+        },
         format!("{}.technology", participant.slot),
         serde_json::to_value(explicit).unwrap_or(Value::Null),
     );
@@ -1016,8 +1060,13 @@ fn known_lifeform_percentage(
     valid_lifeform_percentage(value).then_some(value)
 }
 
-fn validate_composition(composition: &Composition, location: &str, issues: &mut Vec<FieldIssue>) {
-    if composition.is_empty() {
+fn validate_composition(
+    composition: &Composition,
+    location: &str,
+    allow_empty: bool,
+    issues: &mut Vec<FieldIssue>,
+) {
+    if composition.is_empty() && !allow_empty {
         issue(
             issues,
             FieldIssueKind::Missing,
