@@ -18,3 +18,7 @@ pub use stats::{ModifiedStats, StatsCache};
 
 #[cfg(test)]
 mod tests;
+
+mod reported;
+pub use combat::{CombatOutcome as RoundOutcome, SingleCombatResult};
+pub use reported::{ReportedBattle, ReportedSlot, ReportedUnit};

@@ -164,6 +164,35 @@ fn render_comparison(
     ))
 }
 
+/// A separate offline action that cannot confer verified-completion status.
+pub fn compare_stats(args: &ReportArgs) -> Result<String, String> {
+    use std::io::Read as _;
+    if args.resolve_current || args.allow_proxy_transfer {
+        return Err("compare-stats is offline; supply all inputs in the local artifact".to_owned());
+    }
+    let path = args
+        .file
+        .as_ref()
+        .ok_or("compare-stats requires --file PATH")?;
+    let file = std::fs::File::open(path).map_err(|_| "could not read reported-stat artifact")?;
+    let mut bytes = Vec::new();
+    let limit = combat_ogame_api::reports::MAX_REPORT_BYTES;
+    file.take((limit + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "could not read reported-stat artifact")?;
+    if bytes.len() > limit {
+        return Err("reported-stat artifact exceeds 2 MiB".to_owned());
+    }
+    let input:combat_ogame_api::reports::ReportedComparisonInput=serde_json::from_slice(&bytes).map_err(|_|"invalid reported-stat artifact; supply explicit count, weapon, shield and hull fields")?;
+    let result = combat_ogame_api::reports::compare_reported(&input).map_err(str::to_owned)?;
+    let machine = serde_json::to_string_pretty(&result)
+        .map_err(|_| "could not serialize reported-stat comparison")?;
+    Ok(format!(
+        "Conditional reported-stat comparison: {} simulations\n{}\n{}\n\nMachine-readable result:\n{machine}\n",
+        result.run_count, result.method, result.limitations
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::render_comparison;

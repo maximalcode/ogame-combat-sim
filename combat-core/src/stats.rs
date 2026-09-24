@@ -51,6 +51,10 @@ pub struct StatsCache {
 }
 
 impl StatsCache {
+    pub(crate) fn reported(stats: HashMap<EntityType, ModifiedStats>) -> Self {
+        Self { stats }
+    }
+
     /// Built from a whole party rather than from its technology alone.
     ///
     /// Technology and lifeform bonuses are two halves of one side's stat

@@ -124,3 +124,9 @@ impl fmt::Display for ReportError {
 }
 
 impl std::error::Error for ReportError {}
+
+mod reported_comparison;
+pub use reported_comparison::{
+    ObservedOutcome, RapidFireBasis, ReportedComparison, ReportedComparisonInput,
+    ReportedObservation, ReportedSource, compare_reported, compare_reported_with,
+};

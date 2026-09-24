@@ -69,8 +69,10 @@ fn run(command: Command) -> Result<String, String> {
                 report::complete(&args)
             } else if args.action.as_deref() == Some("compare") {
                 report::compare(&args)
+            } else if args.action.as_deref() == Some("compare-stats") {
+                report::compare_stats(&args)
             } else if args.action.is_some() {
-                Err("unknown report action; use `report complete`, `report compare`, or omit the action to import an ID".to_owned())
+                Err("unknown report action; use `report complete`, `report compare`, `report compare-stats`, or omit the action to import an ID".to_owned())
             } else {
                 report::import(&args)
             }
