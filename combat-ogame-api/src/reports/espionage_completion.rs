@@ -120,16 +120,6 @@ pub(super) fn record_provenance(input: &CompletionInput, ledger: &mut EvidenceLe
         ledger
             .fields
             .remove(&format!("{}.entities", participant.slot));
-        if participant.technology.basis == "researched"
-            && participant.technology.weapon.is_some()
-            && participant.technology.shield.is_some()
-            && participant.technology.armour.is_some()
-        {
-            ledger.report(
-                format!("{}.technology.researched", participant.slot),
-                serde_json::to_value(&participant.technology).unwrap_or(Value::Null),
-            );
-        }
     }
 }
 

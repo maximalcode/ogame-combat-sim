@@ -1,26 +1,12 @@
-use combat_ogame_api::reports::{CompletionInput, ReportId, parse_report};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::process::Command;
 
-#[path = "../../combat-ogame-api/tests/support/comparison_input.rs"]
-#[allow(dead_code)]
-mod support;
+#[path = "../../combat-ogame-api/tests/support/espionage_input.rs"]
+mod espionage_input;
 
 #[test]
 fn completed_espionage_scenario_runs_through_cli_without_a_comparison() {
-    let id = ReportId::parse("sr-en-1-0000000000000000000000000000000000000000").unwrap();
-    let payload = json!({"RESULT_CODE":1000,"RESULT_DATA":{
-        "generic":{"event_timestamp":1_700_000_000,"failed_ships":false,"failed_defense":false,"failed_research":false},
-        "details":{"ships":[{"ship_type":204,"count":12}],"defense":[],"research":[{"research_type":109,"level":10},{"research_type":110,"level":10},{"research_type":111,"level":10}]}
-    }});
-    let mut evidence = support::evidence();
-    evidence.participants.get_mut("A1").unwrap().entities = Some([(204, 20)].into());
-    evidence.participants.get_mut("D1").unwrap().technology = None;
-    let artifact = CompletionInput {
-        candidate: parse_report(&id, &payload.to_string()).unwrap(),
-        evidence,
-        universe: support::universe(),
-    };
+    let artifact = espionage_input::scenario();
     let path = std::env::temp_dir().join(format!("espionage-cli-{}.json", std::process::id()));
     std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
     let complete = Command::new(env!("CARGO_BIN_EXE_combat-cli"))
