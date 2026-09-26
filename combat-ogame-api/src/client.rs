@@ -379,9 +379,10 @@ mod tests {
             "rate-limit-test-{}",
             TEST_DIRECTORY_ID.fetch_add(1, Ordering::Relaxed)
         );
-        wait_for_host(&host).await;
-
+        // Measure from before the first reservation. Its zero-duration sleep
+        // may yield before returning, which already spends part of the interval.
         let started = Instant::now();
+        wait_for_host(&host).await;
         wait_for_host(&host).await;
 
         assert!(started.elapsed() >= REQUEST_INTERVAL);
