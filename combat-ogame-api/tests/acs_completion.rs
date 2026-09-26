@@ -299,3 +299,25 @@ fn conflicting_local_identities_are_rejected_without_echoing_private_names() {
             .contains("private-name")
     );
 }
+
+#[test]
+fn participants_beyond_engine_slot_capacity_are_rejected_before_identities_wrap() {
+    let mut artifact = imported::artifact([Some(11), Some(12), Some(13), Some(14)]);
+    let participant = artifact.candidate.attackers[0].clone();
+    let evidence = artifact.evidence.participants["A1"].clone();
+    artifact.candidate.attackers.clear();
+    for number in 1..=256 {
+        let mut participant = participant.clone();
+        participant.slot = format!("A{number}");
+        artifact
+            .evidence
+            .participants
+            .insert(participant.slot.clone(), evidence.clone());
+        artifact.candidate.attackers.push(participant);
+    }
+    let CompletionResult::Incomplete { issues } = artifact.complete() else {
+        panic!("slot identities would wrap")
+    };
+    assert!(issues.iter().any(|issue| issue.location == "attackers"
+        && issue.kind == combat_ogame_api::reports::FieldIssueKind::Unsupported));
+}

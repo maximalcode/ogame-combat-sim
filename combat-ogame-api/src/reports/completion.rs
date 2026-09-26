@@ -423,6 +423,20 @@ fn resolve_side(
             "supply at least one participant",
         );
     }
+    // The engine stores (one-based) per-side slot identities in a u8.
+    if participants.len() > usize::from(u8::MAX) {
+        issue(
+            issues,
+            FieldIssueKind::Unsupported,
+            if prefix == "A" {
+                "attackers"
+            } else {
+                "defenders"
+            },
+            "the simulator supports at most 255 participants per side",
+            "use a simulator supporting this participant count",
+        );
+    }
     participants
         .iter()
         .enumerate()

@@ -181,7 +181,8 @@ ACS completion keeps each attacker and defender in a distinct simulation slot
 resolved independently. Evidence remains keyed by these stable candidate-local
 identities. Side-wide class bonuses are left unset to prevent double counting.
 The aggregate request compositions support economics and settings checks; the
-slots carry the combat modifiers.
+slots carry the combat modifiers. Completion rejects counts beyond the engine's
+255-slot capacity per side instead of allowing identities to wrap.
 
 Side loss metrics (`attacker.losses.*` and `defender.losses.*`) sum all valid
 observed losses. Participant metrics (`A1.losses.*`, etc.) additionally require
