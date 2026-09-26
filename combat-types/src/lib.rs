@@ -1,3 +1,5 @@
+pub mod waves;
+pub use waves::{AttackWave, WaveSequenceRequest, WaveSequenceResult, WaveSequenceTotals};
 pub mod combat_report;
 pub mod entities;
 pub mod lifeforms;
