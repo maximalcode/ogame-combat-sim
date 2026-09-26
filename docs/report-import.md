@@ -65,7 +65,7 @@ are discarded through an explicit output allowlist. Output still contains
 battle evidence: review privacy and obtain publication consent before sharing
 it or creating a regression fixture. No fixture is published automatically.
 
-To complete a single combat candidate offline, pass a structured artifact to
+To complete a combat candidate offline, pass a structured artifact to
 `combat-cli report complete --file`. The artifact supplies explicit participant
 evidence and a fully pinned universe. Completion reports every missing or
 unsupported field together; it never fills absent technology, class, lifeform,
@@ -175,8 +175,25 @@ Earlier assessments remain in `stages`, including suspicious results that might
 change while another metric extends sampling. No observations tune the inputs,
 threshold or simulator mechanics.
 
-Loss counts require complete sequential rounds, explicit per-round loss arrays,
-and unique participant attribution. Resource-value losses use the report's
+Loss counts require complete sequential rounds and explicit per-round loss arrays.
+ACS completion keeps each attacker and defender in a distinct simulation slot
+(`A1`, `A2`, `D1`, etc.), with effective technology and per-entity lifeform bonuses
+resolved independently. Evidence remains keyed by these stable candidate-local
+identities. Side-wide class bonuses are left unset to prevent double counting.
+The aggregate request compositions support economics and settings checks; the
+slots carry the combat modifiers. Completion rejects counts beyond the engine's
+255-slot capacity per side instead of allowing identities to wrap.
+
+Side loss metrics (`attacker.losses.*` and `defender.losses.*`) sum all valid
+observed losses. Participant metrics (`A1.losses.*`, etc.) additionally require
+unique owner attribution and matching simulation slot results. Repeated or
+missing owner mappings leave participant losses not assessable, with an explicit
+attribution diagnostic, while valid side totals remain available. Counts that
+exceed the initial fleet, duplicate attributed entries, and incomplete round
+records are not treated as valid evidence. Completion and comparison output show
+each participant's verified starting statistics and evidence separately.
+
+Resource-value losses use the report's
 `units_lost_*` fields and metal + crystal + deuterium construction costs. Total
 generated debris uses only `debris_*_total`, and is not assessable when completion
 records missing historical debris settings. Remaining debris, defence rebuild,
