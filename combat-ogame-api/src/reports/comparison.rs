@@ -291,6 +291,7 @@ impl BattleComparison {
                 );
             }
         }
+        output.push_str("\nMetric scope: attacker/defender losses are aggregate side totals; A1, A2, D1, etc. identify participant losses. Not-assessable metrics have no valid comparison.\n");
         for metric in &self.metrics {
             let status = match metric.status {
                 ComparisonStatus::Unremarkable => "unremarkable",
@@ -336,7 +337,7 @@ impl BattleComparison {
         let _ = writeln!(
             output,
             "\nStarting statistics, evidence provenance and model context:\n{}",
-            serde_json::to_string_pretty(&self.diagnostics).unwrap_or_default()
+            self.diagnostics.render_text()
         );
         output
     }

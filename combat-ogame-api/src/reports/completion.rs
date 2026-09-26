@@ -13,7 +13,7 @@ use combat_core::ModifiedStats;
 use combat_types::entities::entity_stats;
 use combat_types::{
     AllianceClass, CombatRequest, EntityStats, LifeformBonus, LifeformBonuses, PartyData,
-    PlayerBonuses, PlayerClass, Technology, UniverseSettings,
+    PartySlot, PlayerBonuses, PlayerClass, Technology, UniverseSettings,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -339,66 +339,22 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
         evidence.report("loot_percentage", Value::from(loot_percentage));
     }
 
-    if candidate.attackers.len() != 1 {
-        issue(
-            &mut issues,
-            if candidate.attackers.is_empty() {
-                FieldIssueKind::Missing
-            } else {
-                FieldIssueKind::Unsupported
-            },
-            "attackers",
-            "completion requires exactly one attacker",
-            "supply one attacker participant",
-        );
-    }
-    if candidate.defenders.len() != 1 {
-        issue(
-            &mut issues,
-            if candidate.defenders.is_empty() {
-                FieldIssueKind::Missing
-            } else {
-                FieldIssueKind::Unsupported
-            },
-            "defenders",
-            "completion requires exactly one defender",
-            "supply one defender participant",
-        );
-    }
     validate_universe(candidate, &input.universe, &mut issues, &mut evidence);
-
-    let attacker = candidate.attackers.first().map(|p| {
-        resolve_participant(
-            p,
-            &input.evidence,
-            &candidate.review_required,
-            &mut issues,
-            &mut evidence,
-        )
-    });
-    let defender = candidate.defenders.first().map(|p| {
-        resolve_participant(
-            p,
-            &input.evidence,
-            &candidate.review_required,
-            &mut issues,
-            &mut evidence,
-        )
-    });
-
+    let attacker_slots = resolve_side(&candidate.attackers, "A", input, &mut issues, &mut evidence);
+    let defender_slots = resolve_side(&candidate.defenders, "D", input, &mut issues, &mut evidence);
+    let attacker = aggregate_side(&attacker_slots, &mut issues);
+    let defender = aggregate_side(&defender_slots, &mut issues);
     if !issues.is_empty() {
         return CompletionResult::Incomplete { issues };
     }
-    let (Some(attacker), Some(defender), Ok((settings, pinned_rapid_fire))) =
-        (attacker, defender, input.universe.settings.resolve())
-    else {
+    let Ok((settings, pinned_rapid_fire)) = input.universe.settings.resolve() else {
         return CompletionResult::Incomplete { issues };
     };
     let rapid_fire = resolve_rapid_fire(
         &input.universe,
         &input.evidence,
-        &attacker.party,
-        &defender.party,
+        &attacker,
+        &defender,
         pinned_rapid_fire,
         &mut issues,
         &mut evidence,
@@ -408,8 +364,10 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
     }
 
     let request = CombatRequest {
-        attacker: attacker.party,
-        defender: defender.party,
+        attacker,
+        attacker_slots: Some(attacker_slots),
+        defender,
+        defender_slots: Some(defender_slots),
         universe_settings: Some(settings),
         use_rapid_fire: rapid_fire,
         simulations: 1,
@@ -442,6 +400,88 @@ pub fn complete_candidate(input: &CompletionInput) -> CompletionResult {
 #[must_use]
 pub fn complete_report(input: &CompletionInput) -> CompletionResult {
     complete_candidate(input)
+}
+
+// Candidate-local identities are canonical, independent of private owner IDs.
+fn resolve_side(
+    participants: &[Participant],
+    prefix: &str,
+    input: &CompletionInput,
+    issues: &mut Vec<FieldIssue>,
+    ledger: &mut EvidenceLedger,
+) -> Vec<PartySlot> {
+    if participants.is_empty() {
+        issue(
+            issues,
+            FieldIssueKind::Missing,
+            if prefix == "A" {
+                "attackers"
+            } else {
+                "defenders"
+            },
+            "a combat side has no participants",
+            "supply at least one participant",
+        );
+    }
+    participants
+        .iter()
+        .enumerate()
+        .map(|(index, participant)| {
+            let id = format!("{prefix}{}", index + 1);
+            if participant.slot != id {
+                issue(
+                    issues,
+                    FieldIssueKind::Contradictory,
+                    format!("{id}.slot"),
+                    "participant identity does not match its candidate position",
+                    "retain the parser-assigned participant identities and ordering",
+                );
+                return PartySlot {
+                    id,
+                    name: None,
+                    data: PartyData::default(),
+                };
+            }
+            let resolved = resolve_participant(
+                participant,
+                &input.evidence,
+                &input.candidate.review_required,
+                issues,
+                ledger,
+            );
+            PartySlot {
+                id,
+                name: None,
+                data: resolved.party,
+            }
+        })
+        .collect()
+}
+
+// Aggregate composition serves economics and settings applicability only. Combat
+// always consumes the distinct slots, never a side-wide modifier approximation.
+fn aggregate_side(slots: &[PartySlot], issues: &mut Vec<FieldIssue>) -> PartyData {
+    if let [slot] = slots {
+        return slot.data.clone();
+    }
+    let mut party = PartyData::default();
+    for slot in slots {
+        for (&entity, &count) in &slot.data.entities {
+            let total = party.entities.entry(entity).or_default();
+            if let Some(sum) = total.checked_add(count) {
+                *total = sum;
+            } else {
+                issue(
+                    issues,
+                    FieldIssueKind::Unsupported,
+                    format!("{}.entities.{entity}", slot.id),
+                    "combined fleet exceeds the simulator count range",
+                    "supply a supported fleet size",
+                );
+            }
+        }
+    }
+    party
 }
 
 struct ResolvedParticipant {

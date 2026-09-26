@@ -116,6 +116,7 @@ fn workflow(args: &ReportArgs, comparison: bool) -> Result<String, String> {
             if input.observed.is_none() {
                 output.push_str("  Snapshot evidence only; no observed battle comparison or claim about another time.\n");
             }
+            output.push_str(&input.diagnostics().render_text());
             let _ = write!(
                 output,
                 "  attacker entities: {}\n  defender entities: {}\n  evidence fields: {}\n",
