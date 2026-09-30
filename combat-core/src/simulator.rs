@@ -15,7 +15,7 @@ use rayon::prelude::*;
 use std::sync::Arc;
 
 pub struct Simulator {
-    combat: Arc<Combat>,
+    pub(crate) combat: Arc<Combat>,
 }
 
 impl Simulator {
@@ -58,53 +58,7 @@ impl Simulator {
             &mut rng,
         );
 
-        // Derive aggregated economic data
-        let entity_db = entity_stats();
-        let debris_field = economics::calculate_debris(
-            &single.attacker_losses,
-            &single.defender_losses,
-            entity_db,
-            debris_settings,
-        );
-
-        let loot = if let Some(resources) = planet_resources {
-            let cargo_capacity =
-                economics::calculate_cargo_capacity(&single.attacker_remaining, entity_db);
-            economics::calculate_loot(resources, cargo_capacity)
-        } else {
-            PlanetResources::default()
-        };
-
-        let attacker_profit = economics::calculate_attacker_profit(
-            &debris_field,
-            &loot,
-            &single.attacker_losses,
-            entity_db,
-        );
-        let defender_profit =
-            economics::calculate_defender_profit(&debris_field, &single.defender_losses, entity_db);
-
-        SimulationResult {
-            outcome: match single.outcome {
-                CombatOutcome::AttackersWin => combat_types::CombatOutcome::AttackersWin,
-                CombatOutcome::DefendersWin => combat_types::CombatOutcome::DefendersWin,
-                CombatOutcome::Draw => combat_types::CombatOutcome::Draw,
-            },
-            rounds: single.rounds,
-            attacker_losses: single.attacker_losses,
-            defender_losses: single.defender_losses,
-            attacker_remaining: single.attacker_remaining,
-            defender_remaining: single.defender_remaining,
-            debris_field,
-            loot,
-            attacker_profit,
-            defender_profit,
-            round_details: single.round_details,
-            round_compositions: single.round_compositions,
-            round_compositions_by_slot: None,
-            attacker_slots: single.attacker_slots,
-            defender_slots: single.defender_slots,
-        }
+        enrich_result(single, planet_resources, debris_settings)
     }
 
     /// Run a single simulation (internal helper)
@@ -131,58 +85,7 @@ impl Simulator {
             &mut rng,
         );
 
-        // Load entity database for economic calculations
-        let entity_db = entity_stats();
-
-        // Calculate debris field
-        let debris_field = economics::calculate_debris(
-            &result.attacker_losses,
-            &result.defender_losses,
-            entity_db,
-            debris_settings,
-        );
-
-        // Calculate loot if planet resources are provided
-        let loot = if let Some(resources) = planet_resources {
-            let cargo_capacity =
-                economics::calculate_cargo_capacity(&result.attacker_remaining, entity_db);
-            economics::calculate_loot(resources, cargo_capacity)
-        } else {
-            PlanetResources::default()
-        };
-
-        // Calculate profits
-        let attacker_profit = economics::calculate_attacker_profit(
-            &debris_field,
-            &loot,
-            &result.attacker_losses,
-            entity_db,
-        );
-
-        let defender_profit =
-            economics::calculate_defender_profit(&debris_field, &result.defender_losses, entity_db);
-
-        SimulationResult {
-            outcome: match result.outcome {
-                CombatOutcome::AttackersWin => combat_types::CombatOutcome::AttackersWin,
-                CombatOutcome::DefendersWin => combat_types::CombatOutcome::DefendersWin,
-                CombatOutcome::Draw => combat_types::CombatOutcome::Draw,
-            },
-            rounds: result.rounds,
-            attacker_losses: result.attacker_losses,
-            defender_losses: result.defender_losses,
-            attacker_remaining: result.attacker_remaining,
-            defender_remaining: result.defender_remaining,
-            debris_field,
-            loot,
-            attacker_profit,
-            defender_profit,
-            round_details: result.round_details,
-            round_compositions: result.round_compositions,
-            round_compositions_by_slot: None,
-            attacker_slots: None,
-            defender_slots: None,
-        }
+        enrich_result(result, planet_resources, debris_settings)
     }
 
     /// Run multiple simulations in parallel and aggregate results
@@ -438,6 +341,66 @@ impl Simulator {
         results.average_rounds = total_rounds as f64 / f64::from(request.simulations);
 
         results
+    }
+}
+
+/// Shared economics for exact single battles and attack-wave missions.
+pub(crate) fn enrich_result(
+    result: crate::SingleCombatResult,
+    planet_resources: Option<&PlanetResources>,
+    debris_settings: DebrisSettings,
+) -> SimulationResult {
+    // Load entity database for economic calculations
+    let entity_db = entity_stats();
+
+    // Calculate debris field
+    let debris_field = economics::calculate_debris(
+        &result.attacker_losses,
+        &result.defender_losses,
+        entity_db,
+        debris_settings,
+    );
+
+    // Calculate loot if planet resources are provided
+    let loot = if let Some(resources) = planet_resources {
+        let cargo_capacity =
+            economics::calculate_cargo_capacity(&result.attacker_remaining, entity_db);
+        economics::calculate_loot(resources, cargo_capacity)
+    } else {
+        PlanetResources::default()
+    };
+
+    // Calculate profits
+    let attacker_profit = economics::calculate_attacker_profit(
+        &debris_field,
+        &loot,
+        &result.attacker_losses,
+        entity_db,
+    );
+
+    let defender_profit =
+        economics::calculate_defender_profit(&debris_field, &result.defender_losses, entity_db);
+
+    SimulationResult {
+        outcome: match result.outcome {
+            CombatOutcome::AttackersWin => combat_types::CombatOutcome::AttackersWin,
+            CombatOutcome::DefendersWin => combat_types::CombatOutcome::DefendersWin,
+            CombatOutcome::Draw => combat_types::CombatOutcome::Draw,
+        },
+        rounds: result.rounds,
+        attacker_losses: result.attacker_losses,
+        defender_losses: result.defender_losses,
+        attacker_remaining: result.attacker_remaining,
+        defender_remaining: result.defender_remaining,
+        debris_field,
+        loot,
+        attacker_profit,
+        defender_profit,
+        round_details: result.round_details,
+        round_compositions: result.round_compositions,
+        round_compositions_by_slot: None,
+        attacker_slots: result.attacker_slots,
+        defender_slots: result.defender_slots,
     }
 }
 

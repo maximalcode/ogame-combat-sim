@@ -14,6 +14,8 @@ costs you when you do, and whether the debris field pays for the trip.
 
 The engine implements OGame's combat resolution as it actually behaves:
 
+- **Attack waves** — ordered independent missions carrying each run's exact
+  defender survivors forward; see [the engine API](docs/attack-waves.md)
 - **Rounds** — up to six, with shields regenerating between them
 - **Rapid fire** — the full cross-table, including chained re-rolls
 - **Shield bounce** — shots under 1% of shield strength are absorbed entirely
